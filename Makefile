@@ -6,12 +6,11 @@
 #          Christoph Federrath
 #
 
-# Fortran compiler (e.g., gfortran, ifc)
+# Fortran compiler (e.g., gfortran, ifort)
 FCOMP = mpif90
 
 # For gnu compiler:
 FLAGS = -fdefault-real-8 -O3
-
 # For Intel compiler:
 #FLAGS = -r8 -i4 -O3
 
