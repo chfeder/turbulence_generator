@@ -2,7 +2,7 @@
 
 This tool generates a time sequence of random Fourier modes, used to drive turbulence in hydrodynamical simulation codes.
 
-The output of this tool is currently supported by implementations in AREPO, FLASH, PHANTOM, PLUTO, QUOKKA.
+The output of this tool is currently supported by implementations in AREPO, FLASH, GADGET, PHANTOM, PLUTO, QUOKKA.
 
 ### What are the first steps when working with this repository? ###
 

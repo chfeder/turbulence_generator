@@ -9,7 +9,7 @@ Module Stir_data
 !! DESCRIPTION
 !!
 !!  Writes the turbulence driving mode sequnce to a file that is then read by
-!!  the hydro code (e.g., AREPO, FLASH, PHANTOM, PLUTO, QUOKKA, etc.)
+!!  the hydro code (e.g., AREPO, FLASH, GADGET, PHANTOM, PLUTO, QUOKKA, etc.)
 !!  to generate the physical turbulent acceleration field as a time sequence.
 !!  The driving sequence follows an Ornstein-Uhlenbeck (OU) process.
 !!
