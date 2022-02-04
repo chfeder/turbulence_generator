@@ -1,29 +1,21 @@
-# README #
+# Turbulence Driving Generator #
 
-This README would normally document whatever steps are necessary to get your application up and running.
+This tool generates a time sequence of random Fourier modes, used to drive turbulence in hydrodynamical simulation codes.
 
-### What is this repository for? ###
+The output of this tool is currently supported by implementations in AREPO, FLASH, PHANTOM, PLUTO, QUOKKA.
 
-* Quick summary
-* Version
-* [Learn Markdown](https://bitbucket.org/tutorials/markdowndemo)
+### What are the first steps when working with this repository? ###
 
-### How do I get set up? ###
+* Create a fork of this repo to your own bitbucket account.
+* Clone the fork from your bitbucket account to your local computer.
+* Make your own modifications, commit, push, etc.
+* If you want (some of) your own changes to go into this main repo, please create a pull request.
 
-* Summary of set up
-* Configuration
-* Dependencies
-* Database configuration
-* How to run tests
-* Deployment instructions
+### Copyright notes ###
 
-### Contribution guidelines ###
+If you use this code, please refer to and cite Federrath et al. (2010, A&A 512, A81):
+https://ui.adsabs.harvard.edu/abs/2010A%26A...512A..81F/abstract
 
-* Writing tests
-* Code review
-* Other guidelines
+### Main contact ###
 
-### Who do I talk to? ###
-
-* Repo owner or admin
-* Other community or team contact
+* Christoph Federrath (christoph.federrath@anu.edu.au)
