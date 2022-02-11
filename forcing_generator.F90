@@ -39,8 +39,8 @@ real, save     :: xmin, xmax, ymin, ymax, zmin, zmax
 real, save     :: st_decay
 real, save     :: st_energy
 real, save     :: st_stirmin, st_stirmax
-real, save     :: st_solweight
-real, save     :: st_solweightnorm
+real, save     :: st_solweight, st_solweightnorm
+real, save     :: velocity
 real, save     :: st_power_law_exp
 real, save     :: st_angles_exp
 integer, save  :: st_seed
@@ -290,15 +290,17 @@ subroutine init_stir()
   endif ! st_spectform .eq. 2
 
   write (*,'(A,I6,A)') 'Initialized ',st_nmodes,' modes for stirring.'
-  if (st_spectform.eq.0) write (*,'(A,I2,A)') ' spectral form        = ', st_spectform, ' (Band)'
-  if (st_spectform.eq.1) write (*,'(A,I2,A)') ' spectral form        = ', st_spectform, ' (Parabola)'
-  write (*,'(A,ES10.3)') ' solenoidal weight    = ', st_solweight
-  write (*,'(A,ES10.3)') ' st_solweightnorm     = ', st_solweightnorm
-  write (*,'(A,ES10.3)') ' stirring energy      = ', st_energy
-  write (*,'(A,ES10.3)') ' autocorrelation time = ', st_decay
-  write (*,'(A,ES10.3)') ' minimum wavenumber   = ', st_stirmin
-  write (*,'(A,ES10.3)') ' maximum wavenumber   = ', st_stirmax
-  write (*,'(A,I8)')    ' random seed          = ', st_seed
+  if (st_spectform.eq.0) write (*,'(A,I2,A)') ' spectral form         = ', st_spectform, ' (Band)'
+  if (st_spectform.eq.1) write (*,'(A,I2,A)') ' spectral form         = ', st_spectform, ' (Parabola)'
+  if (st_spectform.eq.2) write (*,'(A,I2,A)') ' spectral form         = ', st_spectform, ' (Power Law)'
+  write (*,'(A,ES10.3)') ' solenoidal weight     = ', st_solweight
+  write (*,'(A,ES10.3)') ' st_solweightnorm      = ', st_solweightnorm
+  write (*,'(A,ES10.3)') ' velocity              = ', velocity
+  write (*,'(A,ES10.3)') ' auto-correlation time = ', st_decay
+  write (*,'(A,ES10.3)') ' stirring energy       = ', st_energy
+  write (*,'(A,ES10.3)') ' minimum wavenumber    = ', st_stirmin
+  write (*,'(A,ES10.3)') ' maximum wavenumber    = ', st_stirmax
+  write (*,'(A,I8)')    ' random seed           = ', st_seed
 
   return
 
@@ -560,7 +562,7 @@ subroutine write_forcing_file(outfile, nsteps, step, time, end_time)
      ! header contains number of times and number of modes, end time, autocorrelation time, ...
      if (iostat.eq.0) then
         write (unit=42) nsteps, st_nmodes, end_time, st_decay, st_energy, st_solweight, &
-                        st_solweightnorm, st_stirmin, st_stirmax, st_spectform
+                        velocity, st_stirmin, st_stirmax, st_spectform
      else
         write (*,'(2A)') 'could not create file for write. filename: ', trim(outfile)
      endif
@@ -607,7 +609,7 @@ program generate_forcing_file
   character (len=80), save  :: power_law_exp_string, vel_string, solweight_string, seed_string
   logical                   :: print_stuff_to_shell = .true.
   real, parameter           :: eps = tiny(0.0)
-  real                      :: Lx, velocity, k_driv, k_min, k_max, st_energy_coeff
+  real                      :: Lx, k_driv, k_min, k_max, st_energy_coeff
 
   ! ******** READING NAMELIST for user input ******** !
   namelist /input/ ndim, xmin, xmax, ymin, ymax, zmin, zmax, velocity, k_driv, k_min, k_max, &
