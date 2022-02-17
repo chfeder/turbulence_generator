@@ -1,0 +1,5 @@
+This is the collection of source code files used in the FLASH hydro code.
+
+This will read the generated turbulence driving file and construct the physical acceleration field from the Fourier mode sequence in the driving file, at requested times.
+
+This code can be used as a template for other hydro codes.
