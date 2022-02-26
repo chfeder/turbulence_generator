@@ -6,24 +6,24 @@
 #          Christoph Federrath
 #
 
-# Fortran compiler (e.g., gfortran, ifort)
-FCOMP = mpif90
-
-# For gnu compiler:
-FLAGS = -fdefault-real-8 -O3
-# For Intel compiler:
-#FLAGS = -r8 -i4 -O3
+# C compiler (e.g., gcc, icpc), flags, and HDF5 library path
+CCOMP = mpicc
+CFLAGS = -O3
+HDF5_PATH = /opt/local
 
 # binary target
-BIN = forcing_generator
+BIN = turbulence_generator
 
 $(BIN) : $(BIN).o
-	$(FCOMP) $(FLAGS) -o $@ $(BIN).o
+	$(CCOMP) $(CFLAGS) -o $@ $(BIN).o -L$(HDF5_PATH)/lib -lhdf5
 
-.SUFFIXES: .F90
+.SUFFIXES: .c .h
 
-.F90.o:
-	$(FCOMP) $(FLAGS) -c $*.F90
+.c.o:
+	$(CCOMP) $(CFLAGS) -c $*.c -I$(HDF5_PATH)/include
 
 clean :
-	rm -f *.o *.mod *~ $(BIN)
+	rm -f *.o *~ $(BIN)
+
+# dependencies
+$(BIN).o : $(BIN).h
