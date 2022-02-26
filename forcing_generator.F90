@@ -8,7 +8,7 @@ Module Stir_data
 !!
 !! DESCRIPTION
 !!
-!!  Writes the turbulence driving mode sequnce to a file that is then read by
+!!  Writes the turbulence driving mode sequence to a file that is then read by
 !!  the hydro code (e.g., AREPO, FLASH, GADGET, PHANTOM, PLUTO, QUOKKA, etc.)
 !!  to generate the physical turbulent acceleration field as a time sequence.
 !!  The driving sequence follows an Ornstein-Uhlenbeck (OU) process.
@@ -57,12 +57,14 @@ subroutine init_stir()
   logical, parameter :: Debug = .false.
 
   integer :: ikxmin, ikxmax, ikymin, ikymax, ikzmin, ikzmax
-  integer :: ikx, iky, ikz, st_tot_nmodes
+  integer :: ikx, iky, ikz, st_tot_nmodes, orig_seed
   real    :: kx, ky, kz, k, kc, Lx, Ly, Lz, amplitude, parab_prefact
 
   ! applies in case of power law (st_spectform .eq. 2)
   integer :: iang, nang, ik, ikmin, ikmax
   real :: rand, phi, theta
+
+  orig_seed = st_seed ! save the original seed for printing below
 
   ! initialize some variables, allocate random seed
   st_OUvar = sqrt(st_energy/st_decay)
@@ -300,7 +302,7 @@ subroutine init_stir()
   write (*,'(A,ES10.3)') ' stirring energy       = ', st_energy
   write (*,'(A,ES10.3)') ' minimum wavenumber    = ', st_stirmin
   write (*,'(A,ES10.3)') ' maximum wavenumber    = ', st_stirmax
-  write (*,'(A,I8)')    ' random seed           = ', st_seed
+  write (*,'(A,I8)')    ' random seed           = ', orig_seed
 
   return
 
@@ -425,8 +427,8 @@ function ran1s(idum)
 !!******************************************************
   integer idum, IA, IM, IQ, IR, NTAB
   real ran1s, AM, EPS, RNMX
-  parameter (IA=16807, IM=2147483647, AM=1./IM, IQ=127773, IR=2836, &
-             NTAB=32, EPS=1.2e-7, RNMX=1.-EPS)
+  parameter (IA=16807, IM=2147483647, AM=1.0/IM, IQ=127773, IR=2836, &
+             NTAB=32, EPS=1.2e-7, RNMX=1.0-EPS)
   integer k, iy
   if (idum .le. 0) then
     idum = max(-idum, 1)
@@ -451,9 +453,9 @@ FUNCTION ran2(idum)
 !!******************************************************
     INTEGER idum, IM1, IM2, IMM1, IA1, IA2, IQ1, IQ2, IR1, IR2, NTAB, NDIV
     REAL ran2, AM, EPS, RNMX
-    PARAMETER (IM1=2147483563, IM2=2147483399, AM=1./IM1, IMM1=IM1-1, &
+    PARAMETER (IM1=2147483563, IM2=2147483399, AM=1.0/IM1, IMM1=IM1-1, &
                IA1=40014, IA2=40692, IQ1=53668, IQ2=52774, IR1=12211, IR2=3791, &
-               NTAB=32, NDIV=1+NINT(REAL(IMM1)/NTAB), EPS=1.2e-7, RNMX=1.0-EPS)
+               NTAB=32, NDIV=1+IMM1/NTAB, EPS=1.2e-7, RNMX=1.0-EPS)
     INTEGER idum2, j, k, iv(NTAB), iy
     SAVE iv, iy, idum2
     DATA idum2/123456789/, iv/NTAB*0/, iy/0/
@@ -513,8 +515,8 @@ subroutine st_calcPhases()
      do j=1, ndim
          diva  = st_mode(j,i)*ka/kk
          divb  = st_mode(j,i)*kb/kk
-         curla = (st_OUphases(6*(i-1)+2*(j-1) + 0 + 1) - divb)
-         curlb = (st_OUphases(6*(i-1)+2*(j-1) + 1 + 1) - diva)
+         curla = st_OUphases(6*(i-1)+2*(j-1) + 0 + 1) - divb
+         curlb = st_OUphases(6*(i-1)+2*(j-1) + 1 + 1) - diva
          st_aka(j,i) = st_solweight*curla+(1.0-st_solweight)*divb
          st_akb(j,i) = st_solweight*curlb+(1.0-st_solweight)*diva
 ! purely compressive
@@ -638,7 +640,7 @@ program generate_forcing_file
     write (power_law_exp_string, '(SP,F5.2)') st_power_law_exp
     power_law_exp_string = '_pl'//trim(power_law_exp_string)
   endif
-  write (vel_string, '(ES9.2)') velocity
+  write (vel_string, '(ES8.2)') velocity
   write (solweight_string, '(F3.1)') st_solweight
   write (seed_string, '(I6.6)') st_seed
   ! output filename read by FLASH
