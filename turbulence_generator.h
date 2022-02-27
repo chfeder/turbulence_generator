@@ -36,13 +36,15 @@
 #define MIN(a,b) ((a) < (b) ? a : b)
 #define MAX(a,b) ((a) > (b) ? a : b)
 
-// forward functions
+// forward functions (the following are meant to be called from outside)
 int TurbGen_init_turbulence_generator(char * parameter_file, const int PE);
-static inline bool TurbGen_check_for_update(double time);
-static inline void TurbGen_get_turb_vector(const double x, const double y, const double z, double * vx, double * vy, double * vz);
-int TurbGen_init_modes(void);
+bool TurbGen_check_for_update(double time);
+void TurbGen_get_turb_vector_unigrid(const double pos_beg[3], const double pos_end[3], const int n[3], float * v_grid[3]);
+void TurbGen_get_turb_vector(const double pos[3], double * v[3]);
 void TurbGen_print_info(void);
+// forward functions (the following are primarily for internal use)
 int TurbGen_read_from_parameter_file(char * search, char type, void * ret);
+int TurbGen_init_modes(void);
 void TurbGen_OU_noise_init(void);
 void TurbGen_OU_noise_update(void);
 void TurbGen_get_decomposition_coeffs(void);
@@ -65,7 +67,6 @@ struct TurbGenData {
   double mode[3][tgd_max_n_modes], aka[3][tgd_max_n_modes], akb[3][tgd_max_n_modes]; // modes arrays
   double OUphases[6*tgd_max_n_modes]; // phases
   double ampl[tgd_max_n_modes]; // amplitudes
-  // parameters, etc
   int ndim; // number of spatial dimensions
   int random_seed, seed; // 'random seed' is the orignial starting seed, then 'seed' gets updated by call to RNG
   int spect_form; // spectral form (Band, Parabola, Power Law)
@@ -154,7 +155,7 @@ int TurbGen_init_turbulence_generator(char * parameter_file, const int PE) {
 
 
 // ******************************************************
-static inline bool TurbGen_check_for_update(double time) {
+bool TurbGen_check_for_update(double time) {
 // ******************************************************
 // Update driving pattern based on input 'time'.
 // If it is 'time' to update the pattern, call OU noise update
@@ -179,38 +180,183 @@ static inline bool TurbGen_check_for_update(double time) {
 
 
 // ******************************************************
-static inline void TurbGen_get_turb_vector(const double x, const double y, const double z, double * vx, double * vy, double * vz) {
+void TurbGen_get_turb_vector_unigrid(const double pos_beg[3], const double pos_end[3], const int n[3], float * v_grid[3]) {
 // ******************************************************
-// Compute physical turbulent vector vx, vy, vz at position x, y, z
-// from loop over all turbulent modes; return into vx, vy, vz
+// Compute 3D physical turbulent vector field on a 3D uniform grid,
+// provided start coordinate pos_beg[3] and end coordinate pos_end[3]
+// of the grid in (x,y,x) and number of points in grid n[3].
+// Return into turbulent vector field into float * v_grid[3].
+// Note that index in v_grid[X][index] is looped with x (index i)
+// as the inner loop and with z (index k) as the outer loop.
 // ******************************************************
-  double sinx[tgd_max_n_modes], cosx[tgd_max_n_modes];
-  double siny[tgd_max_n_modes], cosy[tgd_max_n_modes];
-  double sinz[tgd_max_n_modes], cosz[tgd_max_n_modes];
+  if (tgd.debug) TurbGen_printf("pos_beg = %f %f %f, pos_end = %f %f %f, n = %i %i %i\n",
+        pos_beg[X], pos_beg[Y], pos_beg[Z], pos_end[X], pos_end[Y], pos_end[Z], n[X], n[Y], n[Z]);
+  // containers for speeding-up calculations below
+  double ampl[tgd.n_modes];
+  double sinxi[n[X]][tgd.n_modes];
+  double cosxi[n[X]][tgd.n_modes];
+  double sinyj[n[Y]][tgd.n_modes];
+  double cosyj[n[Y]][tgd.n_modes];
+  double sinzk[n[Z]][tgd.n_modes];
+  double coszk[n[Z]][tgd.n_modes];
+  // compute dx, dy, dz
+  double d[3];
+  for (int dim = 0; dim < 3; dim++) d[dim] = (pos_end[dim] - pos_beg[dim]) / (n[dim]-1);
+  // pre-compute grid position geometry, and trigonometry, for quicker access in loop over modes below
+  for (int m = 0; m < tgd.n_modes; m++) { // loop over modes
+    ampl[m] = 2.0 * tgd.sol_weight_norm * tgd.ampl[m]; // pre-compute amplitude including normalisation factors
+    for (int i = 0; i < n[X]; i++) {
+      sinxi[i][m] = sin(tgd.mode[X][m]*(pos_beg[X]+i*d[X]));
+      cosxi[i][m] = cos(tgd.mode[X][m]*(pos_beg[X]+i*d[X]));
+    }
+    for (int j = 0; j < n[Y]; j++) {
+      sinyj[j][m] = sin(tgd.mode[Y][m]*(pos_beg[Y]+j*d[Y]));
+      cosyj[j][m] = cos(tgd.mode[Y][m]*(pos_beg[Y]+j*d[Y]));
+    }
+    for (int k = 0; k < n[Z]; k++) {
+      sinzk[k][m] = sin(tgd.mode[Z][m]*(pos_beg[Z]+k*d[Z]));
+      coszk[k][m] = cos(tgd.mode[Z][m]*(pos_beg[Z]+k*d[Z]));
+    }
+  }
+  // scratch variables
+  double v[3];
   double real, imag;
+  // loop over cells in grid_out
+  for (int k = 0; k < n[Z]; k++) {
+    for (int j = 0; j < n[Y]; j++) {
+      for (int i = 0; i < n[X]; i++) {
+        // clear
+        v[X] = 0.0; v[Y] = 0.0; v[Z] = 0.0;
+        // loop over modes
+        for (int m = 0; m < tgd.n_modes; m++) {
+          // these are the real and imaginary parts, respectively, of
+          //  e^{ i \vec{k} \cdot \vec{x} } = cos(kx*x + ky*y + kz*z) + i sin(kx*x + ky*y + kz*z)
+          real =  ( cosxi[i][m]*cosyj[j][m] - sinxi[i][m]*sinyj[j][m] ) * coszk[k][m] -
+                  ( sinxi[i][m]*cosyj[j][m] + cosxi[i][m]*sinyj[j][m] ) * sinzk[k][m];
+          imag =  ( cosyj[j][m]*sinzk[k][m] + sinyj[j][m]*coszk[k][m] ) * cosxi[i][m] +
+                  ( cosyj[j][m]*coszk[k][m] - sinyj[j][m]*sinzk[k][m] ) * sinxi[i][m];
+          // accumulate total v as sum over modes
+          v[X] += ampl[m] * (tgd.aka[X][m]*real - tgd.akb[X][m]*imag);
+          v[Y] += ampl[m] * (tgd.aka[Y][m]*real - tgd.akb[Y][m]*imag);
+          v[Z] += ampl[m] * (tgd.aka[Z][m]*real - tgd.akb[Z][m]*imag);
+        }
+        // copy into return grid
+        long index = k*n[X]*n[Y] + j*n[X] + i;
+        v_grid[X][index] = (float)v[X];
+        v_grid[Y][index] = (float)v[Y];
+        v_grid[Z][index] = (float)v[Z];
+      } // i
+    } // j
+  } // k
+} // TurbGen_get_turb_vector_unigrid
+
+
+// ******************************************************
+void TurbGen_get_turb_vector(const double pos[3], double * v[3]) {
+// ******************************************************
+// Compute physical turbulent vector v[3]=(vx,vy,vz) at position pos[3]=(x,y,z)
+// from loop over all turbulent modes; return into double * v[3]
+// ******************************************************
+  // containers for speeding-up calculations below
+  double ampl[tgd.n_modes];
+  double sinx[tgd.n_modes], cosx[tgd.n_modes];
+  double siny[tgd.n_modes], cosy[tgd.n_modes];
+  double sinz[tgd.n_modes], cosz[tgd.n_modes];
   // pre-compute some trigonometry
   for (int m = 0; m < tgd.n_modes; m++) {
-    sinx[m] = sin(tgd.mode[X][m]*x);
-    cosx[m] = cos(tgd.mode[X][m]*x);
-    siny[m] = sin(tgd.mode[Y][m]*y);
-    cosy[m] = cos(tgd.mode[Y][m]*y);
-    sinz[m] = sin(tgd.mode[Z][m]*z);
-    cosz[m] = cos(tgd.mode[Z][m]*z);
+    ampl[m] = 2.0 * tgd.sol_weight_norm * tgd.ampl[m]; // pre-compute amplitude including normalisation factors
+    sinx[m] = sin(tgd.mode[X][m]*pos[X]);
+    cosx[m] = cos(tgd.mode[X][m]*pos[X]);
+    siny[m] = sin(tgd.mode[Y][m]*pos[Y]);
+    cosy[m] = cos(tgd.mode[Y][m]*pos[Y]);
+    sinz[m] = sin(tgd.mode[Z][m]*pos[Z]);
+    cosz[m] = cos(tgd.mode[Z][m]*pos[Z]);
   }
+  // scratch variables
+  double real, imag;
   // init return vector with zero
-  *vx = 0.0; *vy = 0.0; *vz = 0.0;
-  // loop over all modes
+  *v[X] = 0.0; *v[Y] = 0.0; *v[Z] = 0.0;
+  // loop over modes
   for (int m = 0; m < tgd.n_modes; m++) {
     // these are the real and imaginary parts, respectively, of
     //  e^{ i \vec{k} \cdot \vec{x} } = cos(kx*x + ky*y + kz*z) + i sin(kx*x + ky*y + kz*z)
     real = ( cosx[m]*cosy[m] - sinx[m]*siny[m] ) * cosz[m] - ( sinx[m]*cosy[m] + cosx[m]*siny[m] ) * sinz[m];
     imag = cosx[m] * ( cosy[m]*sinz[m] + siny[m]*cosz[m] ) + sinx[m] * ( cosy[m]*cosz[m] - siny[m]*sinz[m] );
     // return vector for this position x, y, z
-    *vx += 2.0*tgd.sol_weight_norm*tgd.ampl[m] * (tgd.aka[X][m]*real - tgd.akb[X][m]*imag);
-    *vy += 2.0*tgd.sol_weight_norm*tgd.ampl[m] * (tgd.aka[Y][m]*real - tgd.akb[Y][m]*imag);
-    *vz += 2.0*tgd.sol_weight_norm*tgd.ampl[m] * (tgd.aka[Z][m]*real - tgd.akb[Z][m]*imag);
+    *v[X] += ampl[m] * (tgd.aka[X][m]*real - tgd.akb[X][m]*imag);
+    *v[Y] += ampl[m] * (tgd.aka[Y][m]*real - tgd.akb[Y][m]*imag);
+    *v[Z] += ampl[m] * (tgd.aka[Z][m]*real - tgd.akb[Z][m]*imag);
   }
 } // TurbGen_get_turb_vector
+
+
+// ******************************************************
+void TurbGen_print_info(void) {
+// ******************************************************
+  TurbGen_printf("Initialized %i modes for turbulence based on parameter file '%s'.\n", tgd.n_modes, tgd.parameter_file);
+  if (tgd.spect_form == 0) TurbGen_printf(" spectral form                                       = %i (Band)\n", tgd.spect_form);
+  if (tgd.spect_form == 1) TurbGen_printf(" spectral form                                       = %i (Parabola)\n", tgd.spect_form);
+  if (tgd.spect_form == 2) TurbGen_printf(" spectral form                                       = %i (Power Law)\n", tgd.spect_form);
+  if (tgd.spect_form == 2) TurbGen_printf(" power-law exponent                                  = %f\n", tgd.power_law_exp);
+  if (tgd.spect_form == 2) TurbGen_printf(" power-law angles sampling exponent                  = %f\n", tgd.angles_exp);
+  TurbGen_printf(" box size Lx                                         = %f\n", tgd.Lx);
+  TurbGen_printf(" turbulent dispersion                                = %f\n", tgd.velocity);
+  TurbGen_printf(" auto-correlation time                               = %f\n", tgd.decay);
+  TurbGen_printf("  -> characteristic turbulent wavenumber (in 2pi/Lx) = %f\n", tgd.Lx / tgd.velocity / tgd.decay);
+  TurbGen_printf(" minimum wavenumber (in 2pi/Lx)                      = %f\n", tgd.stir_min / (2*M_PI) * tgd.Lx);
+  TurbGen_printf(" maximum wavenumber (in 2pi/Lx)                      = %f\n", tgd.stir_max / (2*M_PI) * tgd.Lx);
+  TurbGen_printf(" driving energy (injection rate)                     = %f\n", tgd.energy);
+  TurbGen_printf("  -> energy coefficient (energy / velocity^3 * Lx)   = %f\n", tgd.energy / pow(tgd.velocity,3.0) * tgd.Lx);
+  TurbGen_printf(" solenoidal weight (0.0: comp, 0.5: mix, 1.0: sol)   = %f\n", tgd.sol_weight);
+  TurbGen_printf("  -> solenoidal weight norm (set based on Ndim = %i)  = %f\n", tgd.ndim, tgd.sol_weight_norm);
+  TurbGen_printf(" random seed                                         = %i\n", tgd.random_seed);
+} // TurbGen_print_info
+
+
+// ******************************************************
+int TurbGen_read_from_parameter_file(char * search, char type, void * ret) {
+// ******************************************************
+// parse each line in turbulence generator 'parameter_file' and search for 'search'
+// at the beginning of each line; if 'search' is found return double of value after '='
+// type: 'i' for int, 'd' for double return type void *ret
+// ******************************************************
+  FILE * fp;
+  char * line = NULL;
+  size_t len = 0;
+  ssize_t read;
+  fp = fopen(tgd.parameter_file, "r");
+  if (fp == NULL) { printf("TurbGen: ERROR: could not open parameter file '%s'\n", tgd.parameter_file); exit(-1); }
+  bool found = false;
+  while ((read = getline(&line, &len, fp)) != -1) {
+    if (strncmp(line, search, strlen(search)) == 0) {
+      if (tgd.debug) TurbGen_printf("line = '%s'\n", line);
+      char * substr1 = strstr(line, "="); // extract everything after (and including) '='
+      if (tgd.debug) TurbGen_printf("substr1 = '%s'\n", substr1);
+      char * substr2 = strstr(substr1, "!"); // deal with comment '! ...'
+      char * substr3 = strstr(substr1, "#"); // deal with comment '# ...'
+      int end_index = strlen(substr1);
+      if ((substr2 != NULL) && (substr3 != NULL)) { // if comment is present, reduce end_index
+        end_index -= MAX(strlen(substr2),strlen(substr3));
+      } else { // if comment is present, reduce end_index
+        if (substr2 != NULL) end_index -= strlen(substr2);
+        if (substr3 != NULL) end_index -= strlen(substr3);
+      }
+      char dest[100]; memset(dest, '\0', sizeof(dest));
+      strncpy(dest, substr1+1, end_index-1);
+      if (tgd.debug) TurbGen_printf("dest = '%s'\n", dest);
+      if (type == 'i') *(int*)(ret) = atoi(dest);
+      if (type == 'd') *(double*)(ret) = atof(dest);
+      found = true;
+    }
+    if (found) break;
+  }
+  fclose(fp);
+  if (line) free(line);
+  if (found) return 0; else {
+    printf("TurbGen: ERROR: requested parameter '%s' not found in file '%s'\n", search, tgd.parameter_file);
+    exit(-1);
+  }
+} // TurbGen_read_from_parameter_file
 
 
 // ******************************************************
@@ -420,75 +566,6 @@ int TurbGen_init_modes(void) {
   tgd.n_modes++; // increase by 1 because of indexing use above
   return 0;
 } // TurbGen_init_modes
-
-
-// ******************************************************
-void TurbGen_print_info(void) {
-// ******************************************************
-  TurbGen_printf("Initialized %i modes for turbulence based on parameter file '%s'.\n", tgd.n_modes, tgd.parameter_file);
-  if (tgd.spect_form == 0) TurbGen_printf(" spectral form                                       = %i (Band)\n", tgd.spect_form);
-  if (tgd.spect_form == 1) TurbGen_printf(" spectral form                                       = %i (Parabola)\n", tgd.spect_form);
-  if (tgd.spect_form == 2) TurbGen_printf(" spectral form                                       = %i (Power Law)\n", tgd.spect_form);
-  if (tgd.spect_form == 2) TurbGen_printf(" power-law exponent                                  = %f\n", tgd.power_law_exp);
-  if (tgd.spect_form == 2) TurbGen_printf(" power-law angles sampling exponent                  = %f\n", tgd.angles_exp);
-  TurbGen_printf(" box size Lx                                         = %f\n", tgd.Lx);
-  TurbGen_printf(" turbulent dispersion                                = %f\n", tgd.velocity);
-  TurbGen_printf(" auto-correlation time                               = %f\n", tgd.decay);
-  TurbGen_printf("  -> characteristic turbulent wavenumber (in 2pi/Lx) = %f\n", tgd.Lx / tgd.velocity / tgd.decay);
-  TurbGen_printf(" minimum wavenumber (in 2pi/Lx)                      = %f\n", tgd.stir_min / (2*M_PI) * tgd.Lx);
-  TurbGen_printf(" maximum wavenumber (in 2pi/Lx)                      = %f\n", tgd.stir_max / (2*M_PI) * tgd.Lx);
-  TurbGen_printf(" driving energy (injection rate)                     = %f\n", tgd.energy);
-  TurbGen_printf("  -> energy coefficient (energy / velocity^3 * Lx)   = %f\n", tgd.energy / pow(tgd.velocity,3.0) * tgd.Lx);
-  TurbGen_printf(" solenoidal weight (0.0: comp, 0.5: mix, 1.0: sol)   = %f\n", tgd.sol_weight);
-  TurbGen_printf("  -> solenoidal weight norm (set based on Ndim = %i)  = %f\n", tgd.ndim, tgd.sol_weight_norm);
-  TurbGen_printf(" random seed                                         = %i\n", tgd.random_seed);
-} // TurbGen_print_info
-
-
-// ******************************************************
-int TurbGen_read_from_parameter_file(char * search, char type, void * ret) {
-// ******************************************************
-// parse each line in turbulence generator 'parameter_file' and search for 'search'
-// at the beginning of each line; if 'search' is found return double of value after '='
-// type: 'i' for int, 'd' for double return type void *ret
-// ******************************************************
-  FILE * fp;
-  char * line = NULL;
-  size_t len = 0;
-  ssize_t read;
-  fp = fopen(tgd.parameter_file, "r");
-  if (fp == NULL) { printf("TurbGen: ERROR: could not open parameter file '%s'\n", tgd.parameter_file); exit(-1); }
-  bool found = false;
-  while ((read = getline(&line, &len, fp)) != -1) {
-    if (strncmp(line, search, strlen(search)) == 0) {
-      if (tgd.debug) TurbGen_printf("line = '%s'\n", line);
-      char * substr1 = strstr(line, "="); // extract everything after (and including) '='
-      if (tgd.debug) TurbGen_printf("substr1 = '%s'\n", substr1);
-      char * substr2 = strstr(substr1, "!"); // deal with comment '! ...'
-      char * substr3 = strstr(substr1, "#"); // deal with comment '# ...'
-      int end_index = strlen(substr1);
-      if ((substr2 != NULL) && (substr3 != NULL)) { // if comment is present, reduce end_index
-        end_index -= MAX(strlen(substr2),strlen(substr3));
-      } else { // if comment is present, reduce end_index
-        if (substr2 != NULL) end_index -= strlen(substr2);
-        if (substr3 != NULL) end_index -= strlen(substr3);
-      }
-      char dest[100]; memset(dest, '\0', sizeof(dest));
-      strncpy(dest, substr1+1, end_index-1);
-      if (tgd.debug) TurbGen_printf("dest = '%s'\n", dest);
-      if (type == 'i') *(int*)(ret) = atoi(dest);
-      if (type == 'd') *(double*)(ret) = atof(dest);
-      found = true;
-    }
-    if (found) break;
-  }
-  fclose(fp);
-  if (line) free(line);
-  if (found) return 0; else {
-    printf("TurbGen: ERROR: requested parameter '%s' not found in file '%s'\n", search, tgd.parameter_file);
-    exit(-1);
-  }
-} // TurbGen_read_from_parameter_file
 
 
 // ******************************************************
