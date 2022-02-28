@@ -7,7 +7,7 @@
 !!  Stir_init(logical(in) :: restart)
 !!
 !! DESCRIPTION
-!!  Initialise turbulence driving; read header of stirring modes file
+!!  Initialise turbulence driving; read parameters in turbulence generator input file
 !!
 !! ARGUMENTS
 !!   restart -restarting from checkpoint?
@@ -31,9 +31,7 @@ subroutine Stir_init(restart)
 
   use Stir_data
   use Driver_data, ONLY : dr_globalMe
-  use Driver_interface, ONLY : Driver_getSimTime
   use RuntimeParameters_interface, ONLY : RuntimeParameters_get
-  use Grid_data, ONLY : gr_imin, gr_imax
 
   implicit none
 
@@ -41,8 +39,6 @@ subroutine Stir_init(restart)
 #include "Flash.h"
 
   logical, intent(in) :: restart
-  real                :: time, Lx
-  real(kind=8)        :: timeinfile
 
   call RuntimeParameters_get('useStir', st_useStir)
   call RuntimeParameters_get('st_infilename', st_infilename)
@@ -55,39 +51,8 @@ subroutine Stir_init(restart)
     return
   endif
 
-  ! this call sets dt_update_accel and reads general information from the driving modes file
-  call Driver_getSimTime(time)
-  call st_read_modes_file(st_infilename, real(time,kind=8), timeinfile)
-
-  ! this makes the rms force constant for 1D, 2D, 3D, irrespective of the solenoidal weight
-  if (NDIM .eq. 3) st_solweightnorm = sqrt(3.0/3.0)*sqrt(3.0)*1.0/sqrt(1.0-2.0*st_solweight+3.0*st_solweight**2.0)
-  if (NDIM .eq. 2) st_solweightnorm = sqrt(3.0/2.0)*sqrt(3.0)*1.0/sqrt(1.0-2.0*st_solweight+2.0*st_solweight**2.0)
-  if (NDIM .eq. 1) st_solweightnorm = sqrt(3.0/1.0)*sqrt(3.0)*1.0/sqrt(1.0-2.0*st_solweight+1.0*st_solweight**2.0)
-
-  ! box size (in x)
-  Lx = gr_imax - gr_imin
-
-  if (dr_globalMe .eq. MASTER_PE) then
-    write(*,'(A)') " Stir_init: =================================================================================="
-    write(*,'(A,I6,A)') ' Using ', st_nmodes, ' modes for turbulence driving from file "'//trim(st_infilename)//'"'
-    if (st_spectform .eq. 0) &
-      write(*,'(A,I2,A)') ' spectral form                                     = ', st_spectform, ' (Band)'
-    if (st_spectform .eq. 1) &
-      write(*,'(A,I2,A)') ' spectral form                                     = ', st_spectform, ' (Paraboloid)'
-    if (st_spectform .eq. 2) &
-      write(*,'(A,I2,A)') ' spectral form                                     = ', st_spectform, ' (Power Law)'
-    write(*,'(A,ES10.3)') ' simulation box size Lx                            = ', Lx
-    write(*,'(A,ES10.3)') ' velocity dispersion                               = ', st_velocity
-    write(*,'(A,ES10.3)') ' auto-correlation time                             = ', st_decay
-    write(*,'(A,ES10.3)') '  -> characteristic driving wavenumber (in 2pi/Lx) = ', Lx / st_velocity / st_decay
-    write(*,'(A,ES10.3)') ' minimum driving wavenumber (in 2pi/Lx)            = ', st_stirmin / (2*PI) * Lx
-    write(*,'(A,ES10.3)') ' maximum driving wavenumber (in 2pi/Lx)            = ', st_stirmax / (2*PI) * Lx
-    write(*,'(A,ES10.3)') ' driving energy (injection rate)                   = ', st_energy
-    write(*,'(A,ES10.3)') '  -> energy coefficient (energy / velocity^3 * Lx) = ', st_energy / st_velocity**3 * Lx
-    write(*,'(A,ES10.3)') ' solenoidal weight (0.0: comp, 0.5: mix, 1.0: sol) = ', st_solweight
-    write(*,'(A,I1,A,ES10.3)') '  -> st_solweightnorm (set based on NDIM=', NDIM, ')        = ', st_solweightnorm
-    write(*,'(A)') " ============================================================================================="
-  endif
+  ! initialise the turbulence generator based on parameter file provided in st_infilename
+  call st_init_turbulence_generator_c(trim(st_infilename)//char(0), dt_update_accel);
 
   return
 
