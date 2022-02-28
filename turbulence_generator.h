@@ -40,7 +40,7 @@
 int TurbGen_init_turbulence_generator(char * parameter_file, const int PE);
 bool TurbGen_check_for_update(double time);
 void TurbGen_get_turb_vector_unigrid(const double pos_beg[3], const double pos_end[3], const int n[3], float * v_grid[3]);
-void TurbGen_get_turb_vector(const double pos[3], double * v[3]);
+void TurbGen_get_turb_vector(const double pos[3], double v[3]);
 void TurbGen_print_info(void);
 // forward functions (the following are primarily for internal use)
 int TurbGen_read_from_parameter_file(char * search, char type, void * ret);
@@ -252,7 +252,7 @@ void TurbGen_get_turb_vector_unigrid(const double pos_beg[3], const double pos_e
 
 
 // ******************************************************
-void TurbGen_get_turb_vector(const double pos[3], double * v[3]) {
+void TurbGen_get_turb_vector(const double pos[3], double v[3]) {
 // ******************************************************
 // Compute physical turbulent vector v[3]=(vx,vy,vz) at position pos[3]=(x,y,z)
 // from loop over all turbulent modes; return into double * v[3]
@@ -275,7 +275,7 @@ void TurbGen_get_turb_vector(const double pos[3], double * v[3]) {
   // scratch variables
   double real, imag;
   // init return vector with zero
-  *v[X] = 0.0; *v[Y] = 0.0; *v[Z] = 0.0;
+  v[X] = 0.0; v[Y] = 0.0; v[Z] = 0.0;
   // loop over modes
   for (int m = 0; m < tgd.n_modes; m++) {
     // these are the real and imaginary parts, respectively, of
@@ -283,9 +283,9 @@ void TurbGen_get_turb_vector(const double pos[3], double * v[3]) {
     real = ( cosx[m]*cosy[m] - sinx[m]*siny[m] ) * cosz[m] - ( sinx[m]*cosy[m] + cosx[m]*siny[m] ) * sinz[m];
     imag = cosx[m] * ( cosy[m]*sinz[m] + siny[m]*cosz[m] ) + sinx[m] * ( cosy[m]*cosz[m] - siny[m]*sinz[m] );
     // return vector for this position x, y, z
-    *v[X] += ampl[m] * (tgd.aka[X][m]*real - tgd.akb[X][m]*imag);
-    *v[Y] += ampl[m] * (tgd.aka[Y][m]*real - tgd.akb[Y][m]*imag);
-    *v[Z] += ampl[m] * (tgd.aka[Z][m]*real - tgd.akb[Z][m]*imag);
+    v[X] += ampl[m] * (tgd.aka[X][m]*real - tgd.akb[X][m]*imag);
+    v[Y] += ampl[m] * (tgd.aka[Y][m]*real - tgd.akb[Y][m]*imag);
+    v[Z] += ampl[m] * (tgd.aka[Z][m]*real - tgd.akb[Z][m]*imag);
   }
 } // TurbGen_get_turb_vector
 
