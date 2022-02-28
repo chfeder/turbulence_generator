@@ -103,7 +103,7 @@ int TurbGen_init_turbulence_generator(char * parameter_file, const int PE) {
     fclose(fp);
   }
   // read parameter file
-  double k_driv, k_min, k_max, energy_coeff;
+  double k_driv, k_min, k_max, ampl_coeff;
   TurbGen_read_from_parameter_file("ndim", 'i', &tgd.ndim);
   TurbGen_read_from_parameter_file("xmin", 'd', &tgd.xmin);
   TurbGen_read_from_parameter_file("xmax", 'd', &tgd.xmax);
@@ -119,23 +119,24 @@ int TurbGen_init_turbulence_generator(char * parameter_file, const int PE) {
   TurbGen_read_from_parameter_file("spect_form", 'i', &tgd.spect_form);
   TurbGen_read_from_parameter_file("power_law_exp", 'd', &tgd.power_law_exp);
   TurbGen_read_from_parameter_file("angles_exp", 'd', &tgd.angles_exp);
-  TurbGen_read_from_parameter_file("energy_coeff", 'd', &energy_coeff);
+  TurbGen_read_from_parameter_file("ampl_coeff", 'd', &ampl_coeff);
   TurbGen_read_from_parameter_file("random_seed", 'i', &tgd.random_seed);
   TurbGen_read_from_parameter_file("nsteps_per_turnover_time", 'i', &tgd.nsteps_per_turnover_time);
   // define derived physical quantities
-  tgd.Lx = tgd.xmax-tgd.xmin;                           // Length of box in x; used for normalisations below
-  tgd.stir_min = (k_min-DBL_EPSILON) * 2*M_PI / tgd.Lx;  // Minimum driving wavenumber <~  k_min * 2pi / Lx
-  tgd.stir_max = (k_max+DBL_EPSILON) * 2*M_PI / tgd.Lx;  // Maximum driving wavenumber >~  k_max * 2pi / Lx
-  tgd.decay = tgd.Lx / k_driv / tgd.velocity;           // Auto-correlation time, t_turb = Lx / k_driv / velocity;
-                                                        // aka turbulent turnover (crossing) time; note that k_driv is in units of 2pi/Lx
-  tgd.energy = energy_coeff * 
-                  pow(tgd.velocity,3.0) / tgd.Lx;       // Energy input rate => driving amplitude ~ sqrt(energy/decay)
-                                                        // Note that energy input rate ~ velocity^3 * L_box^-1
-                                                        // energy_coeff needs to be adjusted to approach actual target velocity dispersion
-  tgd.OUvar = sqrt(tgd.energy/tgd.decay);               // Ornstein-Uhlenbeck variance
-  tgd.dt = tgd.decay / tgd.nsteps_per_turnover_time;    // time step in OU process and for creating new driving pattern
-  tgd.step = -1;                                         // set internal OU step to 0 for start-up
-  tgd.seed = tgd.random_seed;                           // copy orignial seed into local seed; local seeds gets updated everytime RNG is called
+  tgd.Lx = tgd.xmax-tgd.xmin;                             // Length of box in x; used for normalisations below
+  tgd.stir_min = (k_min-DBL_EPSILON) * 2*M_PI / tgd.Lx;   // Minimum driving wavenumber <~  k_min * 2pi / Lx
+  tgd.stir_max = (k_max+DBL_EPSILON) * 2*M_PI / tgd.Lx;   // Maximum driving wavenumber >~  k_max * 2pi / Lx
+  tgd.decay = tgd.Lx / k_driv / tgd.velocity;             // Auto-correlation time, t_turb = Lx / k_driv / velocity;
+                                                          // i.e., turbulent turnover (crossing) time; with k_driv in units of 2pi/Lx
+  tgd.energy = pow(ampl_coeff*tgd.velocity,3.0) / tgd.Lx; // Energy input rate => driving amplitude ~ sqrt(energy/decay)
+                                                          // Note that energy input rate ~ velocity^3 * L_box^-1
+                                                          // ampl_coeff is the amplitude coefficient and needs to be
+                                                          // adjusted to approach actual target velocity dispersion
+  tgd.OUvar = sqrt(tgd.energy/tgd.decay);                 // Ornstein-Uhlenbeck variance
+  tgd.dt = tgd.decay / tgd.nsteps_per_turnover_time;      // time step in OU process and for creating new driving pattern
+  tgd.step = -1;                                          // set internal OU step to 0 for start-up
+  tgd.seed = tgd.random_seed;                             // copy orignial seed into local seed;
+                                                          //local seeds gets updated everytime RNG is called
   // this makes the rms of the turbulent field constant, irrespective of the solenoidal weight
   if (tgd.ndim == 3) tgd.sol_weight_norm = sqrt(3.0/3.0)*sqrt(3.0)*1.0/sqrt(1.0-2.0*tgd.sol_weight+3.0*pow(tgd.sol_weight,2.0));
   if (tgd.ndim == 2) tgd.sol_weight_norm = sqrt(3.0/2.0)*sqrt(3.0)*1.0/sqrt(1.0-2.0*tgd.sol_weight+2.0*pow(tgd.sol_weight,2.0));
@@ -174,7 +175,7 @@ bool TurbGen_check_for_update(double time) {
   }
   TurbGen_get_decomposition_coeffs(); // calculate solenoidal and compressive coefficients (aka, akb) from OUphases
   double time_gen = tgd.step * tgd.dt;
-  TurbGen_printf("Generated new turbulence driving pattern: #%6i, time = %f, time/t_turb = %f\n", tgd.step, time_gen, time_gen/tgd.decay); // print some info
+  TurbGen_printf("Generated new turbulence driving pattern: #%6i, time = %e, time/t_turb = %-7.2f\n", tgd.step, time_gen, time_gen/tgd.decay); // print some info
   return true; // we just updated the driving pattern
 } // TurbGen_check_for_update
 
@@ -297,18 +298,18 @@ void TurbGen_print_info(void) {
   if (tgd.spect_form == 0) TurbGen_printf(" spectral form                                       = %i (Band)\n", tgd.spect_form);
   if (tgd.spect_form == 1) TurbGen_printf(" spectral form                                       = %i (Parabola)\n", tgd.spect_form);
   if (tgd.spect_form == 2) TurbGen_printf(" spectral form                                       = %i (Power Law)\n", tgd.spect_form);
-  if (tgd.spect_form == 2) TurbGen_printf(" power-law exponent                                  = %f\n", tgd.power_law_exp);
-  if (tgd.spect_form == 2) TurbGen_printf(" power-law angles sampling exponent                  = %f\n", tgd.angles_exp);
-  TurbGen_printf(" box size Lx                                         = %f\n", tgd.Lx);
-  TurbGen_printf(" turbulent dispersion                                = %f\n", tgd.velocity);
-  TurbGen_printf(" auto-correlation time                               = %f\n", tgd.decay);
-  TurbGen_printf("  -> characteristic turbulent wavenumber (in 2pi/Lx) = %f\n", tgd.Lx / tgd.velocity / tgd.decay);
-  TurbGen_printf(" minimum wavenumber (in 2pi/Lx)                      = %f\n", tgd.stir_min / (2*M_PI) * tgd.Lx);
-  TurbGen_printf(" maximum wavenumber (in 2pi/Lx)                      = %f\n", tgd.stir_max / (2*M_PI) * tgd.Lx);
-  TurbGen_printf(" driving energy (injection rate)                     = %f\n", tgd.energy);
-  TurbGen_printf("  -> energy coefficient (energy / velocity^3 * Lx)   = %f\n", tgd.energy / pow(tgd.velocity,3.0) * tgd.Lx);
-  TurbGen_printf(" solenoidal weight (0.0: comp, 0.5: mix, 1.0: sol)   = %f\n", tgd.sol_weight);
-  TurbGen_printf("  -> solenoidal weight norm (set based on Ndim = %i)  = %f\n", tgd.ndim, tgd.sol_weight_norm);
+  if (tgd.spect_form == 2) TurbGen_printf(" power-law exponent                                  = %e\n", tgd.power_law_exp);
+  if (tgd.spect_form == 2) TurbGen_printf(" power-law angles sampling exponent                  = %e\n", tgd.angles_exp);
+  TurbGen_printf(" box size Lx                                         = %e\n", tgd.Lx);
+  TurbGen_printf(" turbulent dispersion                                = %e\n", tgd.velocity);
+  TurbGen_printf(" auto-correlation time                               = %e\n", tgd.decay);
+  TurbGen_printf("  -> characteristic turbulent wavenumber (in 2pi/Lx) = %e\n", tgd.Lx / tgd.velocity / tgd.decay);
+  TurbGen_printf(" minimum wavenumber (in 2pi/Lx)                      = %e\n", tgd.stir_min / (2*M_PI) * tgd.Lx);
+  TurbGen_printf(" maximum wavenumber (in 2pi/Lx)                      = %e\n", tgd.stir_max / (2*M_PI) * tgd.Lx);
+  TurbGen_printf(" driving energy (injection rate)                     = %e\n", tgd.energy);
+  TurbGen_printf("  -> amplitude coefficient                           = %e\n", pow(tgd.energy*tgd.Lx,1.0/3.0) / tgd.velocity);
+  TurbGen_printf(" solenoidal weight (0.0: comp, 0.5: mix, 1.0: sol)   = %e\n", tgd.sol_weight);
+  TurbGen_printf("  -> solenoidal weight norm (set based on Ndim = %i)  = %e\n", tgd.ndim, tgd.sol_weight_norm);
   TurbGen_printf(" random seed                                         = %i\n", tgd.random_seed);
 } // TurbGen_print_info
 
