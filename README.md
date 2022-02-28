@@ -5,6 +5,7 @@ This tool generates a time sequence of random Fourier modes, used to drive turbu
 Turbulence driving based on this method is currently supported by implementations in AREPO, FLASH, GADGET, PHANTOM, PLUTO, QUOKKA.
 
 Main files:
+
 * 'turbulence_generator.h' contains the main library functions and data for using the generator.
 * 'turbulence_generator.c' contains a basic example for how to include and use the generator.
 * 'turbulence_generator.inp' is the parameter file that controls the turbulence generator.
