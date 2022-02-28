@@ -59,7 +59,7 @@ enum {X, Y, Z};
 
 // global turbulence generator data structure
 struct TurbGenData {
-  bool debug;
+  bool verbose;
   int PE; // MPI task for printf purposes, if provided
   char * parameter_file; // parameter file for controlling TurbGen
   int n_modes; // number of modes
@@ -162,15 +162,15 @@ bool TurbGen_check_for_update(double time) {
 // and update the decomposition coefficients; otherwise, simply return.
 // ******************************************************
   int step_requested = floor(time / tgd.dt); // requested OU step number based on input current 'time'
-  if (tgd.debug) TurbGen_printf("step_requested = %i\n", step_requested);
+  if (tgd.verbose) TurbGen_printf("step_requested = %i\n", step_requested);
   if (step_requested <= tgd.step) {
-    if (tgd.debug) TurbGen_printf("no update of pattern...returning.\n");
+    if (tgd.verbose) TurbGen_printf("no update of pattern...returning.\n");
     return false; // no update (yet) -> return false, i.e., no change to driving pattern
   }
   // update OU vector
   for (int is = tgd.step; is < step_requested; is++) {
     TurbGen_OU_noise_update(); // this seeks to the requested OU state (updates OUphases)
-    if (tgd.debug) TurbGen_printf("step = %i, time = %f\n", tgd.step, tgd.step*tgd.dt); // print some info
+    if (tgd.verbose) TurbGen_printf("step = %i, time = %f\n", tgd.step, tgd.step*tgd.dt); // print some info
   }
   TurbGen_get_decomposition_coeffs(); // calculate solenoidal and compressive coefficients (aka, akb) from OUphases
   double time_gen = tgd.step * tgd.dt;
@@ -189,7 +189,7 @@ void TurbGen_get_turb_vector_unigrid(const double pos_beg[3], const double pos_e
 // Note that index in v_grid[X][index] is looped with x (index i)
 // as the inner loop and with z (index k) as the outer loop.
 // ******************************************************
-  if (tgd.debug) TurbGen_printf("pos_beg = %f %f %f, pos_end = %f %f %f, n = %i %i %i\n",
+  if (tgd.verbose) TurbGen_printf("pos_beg = %f %f %f, pos_end = %f %f %f, n = %i %i %i\n",
         pos_beg[X], pos_beg[Y], pos_beg[Z], pos_end[X], pos_end[Y], pos_end[Z], n[X], n[Y], n[Z]);
   // containers for speeding-up calculations below
   double ampl[tgd.n_modes];
@@ -329,9 +329,9 @@ int TurbGen_read_from_parameter_file(char * search, char type, void * ret) {
   bool found = false;
   while ((read = getline(&line, &len, fp)) != -1) {
     if (strncmp(line, search, strlen(search)) == 0) {
-      if (tgd.debug) TurbGen_printf("line = '%s'\n", line);
+      if (tgd.verbose) TurbGen_printf("line = '%s'\n", line);
       char * substr1 = strstr(line, "="); // extract everything after (and including) '='
-      if (tgd.debug) TurbGen_printf("substr1 = '%s'\n", substr1);
+      if (tgd.verbose) TurbGen_printf("substr1 = '%s'\n", substr1);
       char * substr2 = strstr(substr1, "!"); // deal with comment '! ...'
       char * substr3 = strstr(substr1, "#"); // deal with comment '# ...'
       int end_index = strlen(substr1);
@@ -343,7 +343,7 @@ int TurbGen_read_from_parameter_file(char * search, char type, void * ret) {
       }
       char dest[100]; memset(dest, '\0', sizeof(dest));
       strncpy(dest, substr1+1, end_index-1);
-      if (tgd.debug) TurbGen_printf("dest = '%s'\n", dest);
+      if (tgd.verbose) TurbGen_printf("dest = '%s'\n", dest);
       if (type == 'i') *(int*)(ret) = atoi(dest);
       if (type == 'd') *(double*)(ret) = atof(dest);
       found = true;
@@ -448,7 +448,7 @@ int TurbGen_init_modes(void) {
 
             tgd.n_modes++;
             tgd.ampl[tgd.n_modes] = amplitude;
-            if (tgd.debug) TurbGen_printf("init_stir:  ampl[%i] = %f\n", tgd.n_modes, tgd.ampl[tgd.n_modes]);
+            if (tgd.verbose) TurbGen_printf("init_stir:  ampl[%i] = %f\n", tgd.n_modes, tgd.ampl[tgd.n_modes]);
             tgd.mode[X][tgd.n_modes] = kx;
             tgd.mode[Y][tgd.n_modes] = ky;
             tgd.mode[Z][tgd.n_modes] = kz;
@@ -457,7 +457,7 @@ int TurbGen_init_modes(void) {
 
               tgd.n_modes++;
               tgd.ampl[tgd.n_modes] = amplitude;
-              if (tgd.debug) TurbGen_printf("init_stir:  ampl[%i] = %f\n", tgd.n_modes, tgd.ampl[tgd.n_modes]);
+              if (tgd.verbose) TurbGen_printf("init_stir:  ampl[%i] = %f\n", tgd.n_modes, tgd.ampl[tgd.n_modes]);
               tgd.mode[X][tgd.n_modes] =  kx;
               tgd.mode[Y][tgd.n_modes] = -ky;
               tgd.mode[Z][tgd.n_modes] =  kz;
@@ -468,14 +468,14 @@ int TurbGen_init_modes(void) {
 
               tgd.n_modes++;
               tgd.ampl[tgd.n_modes] = amplitude;
-              if (tgd.debug) TurbGen_printf("init_stir:  ampl[%i] = %f\n", tgd.n_modes, tgd.ampl[tgd.n_modes]);
+              if (tgd.verbose) TurbGen_printf("init_stir:  ampl[%i] = %f\n", tgd.n_modes, tgd.ampl[tgd.n_modes]);
               tgd.mode[X][tgd.n_modes] =  kx;
               tgd.mode[Y][tgd.n_modes] =  ky;
               tgd.mode[Z][tgd.n_modes] = -kz;
 
               tgd.n_modes++;
               tgd.ampl[tgd.n_modes] = amplitude;
-              if (tgd.debug) TurbGen_printf("init_stir:  ampl[%i] = %f\n", tgd.n_modes, tgd.ampl[tgd.n_modes]);
+              if (tgd.verbose) TurbGen_printf("init_stir:  ampl[%i] = %f\n", tgd.n_modes, tgd.ampl[tgd.n_modes]);
               tgd.mode[X][tgd.n_modes] =  kx;
               tgd.mode[Y][tgd.n_modes] = -ky;
               tgd.mode[Z][tgd.n_modes] = -kz;
@@ -523,7 +523,7 @@ int TurbGen_init_modes(void) {
         theta = M_PI/2.0;
         if (tgd.ndim > 2) theta = acos(1.0 - 2.0*TurbGen_ran2(&tgd.seed)); // theta = [0,pi] sample the whole sphere
 
-        if (tgd.debug) TurbGen_printf("entering: theta = %f, phi = %f\n", theta, phi);
+        if (tgd.verbose) TurbGen_printf("entering: theta = %f, phi = %f\n", theta, phi);
 
         rand = ik + TurbGen_ran2(&tgd.seed) - 0.5;
         kx = 2*M_PI * round(rand*sin(theta)*cos(phi)) / Lx;
@@ -550,7 +550,7 @@ int TurbGen_init_modes(void) {
 
           tgd.n_modes++;
           tgd.ampl[tgd.n_modes] = amplitude;
-          if (tgd.debug) TurbGen_printf("init_stir:  ampl[%i] = %f\n", tgd.n_modes, tgd.ampl[tgd.n_modes]);
+          if (tgd.verbose) TurbGen_printf("init_stir:  ampl[%i] = %f\n", tgd.n_modes, tgd.ampl[tgd.n_modes]);
           tgd.mode[X][tgd.n_modes] = kx;
           tgd.mode[Y][tgd.n_modes] = ky;
           tgd.mode[Z][tgd.n_modes] = kz;
@@ -652,7 +652,7 @@ void TurbGen_get_decomposition_coeffs(void) {
       // purely solenoidal
       // tgd.aka[j][i] = R - tgd.mode[j][i]*kb/kk;
       // tgd.akb[j][i] = I - tgd.mode[j][i]*ka/kk;
-      if (tgd.debug) {
+      if (tgd.verbose) {
         TurbGen_printf("mode(dim=%1i, mode=%3i) = %12.6f\n", j, i, tgd.mode[j][i]);
         TurbGen_printf("aka (dim=%1i, mode=%3i) = %12.6f\n", j, i, tgd.aka [j][i]);
         TurbGen_printf("akb (dim=%1i, mode=%3i) = %12.6f\n", j, i, tgd.akb [j][i]);
