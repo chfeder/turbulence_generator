@@ -132,10 +132,10 @@ int main(void)
     double k_max = 20.0; // minimum wavenumber for turbulent field (in units of 2pi / L[X])
     int spect_form = 2; // 0: band/rectangle/constant, 1: paraboloid, 2: power law
     double power_law_exp = -2.0; // if spect_form == 2: power-law exponent (e.g., -2 would be Burgers,
-                                // or -5/3 would be Kolmogorov, or 1.5 would Kazantsev)
+                                 // or -5/3 would be Kolmogorov, or 1.5 would Kazantsev)
     double angles_exp = 1.0; // if spect_form == 2: spectral sampling of angles;
-                            // number of modes (angles) in k-shell surface increases as k^angles_exp.
-                            // For full sampling, angles_exp = 2.0; for healpix-type sampling, angles_exp = 0.0.
+                             // number of modes (angles) in k-shell surface increases as k^angles_exp.
+                             // For full sampling, angles_exp = 2.0; for healpix-type sampling, angles_exp = 0.0.
     double sol_weight = 0.5; // solenoidal weight: 1.0: solenoidal driving, 0.0: compressive driving, 0.5: natural mixture
     int random_seed = 140281; // random seed for this turbulent realisation
     int PE = 0; // in case we call this from an MPI program, we supply the MPI rank here, so we limited fprint to stdout to the MPI master rank
