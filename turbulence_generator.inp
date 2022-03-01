@@ -3,12 +3,9 @@
 # *** Please see Federrath et al. (2010, A&A 512, A81) for details and cite :) ***
 # ********************************************************************************
 ndim                     = 3         # N-dimensional turbulence driving (1 or 2 or 3)
-xmin                     = -0.5      # min x coordinate of (simulation) box
-xmax                     = +0.5      # max x coordinate of (simulation) box (Lx=xmax-xmin)
-ymin                     = -0.5      # min y coordinate of (simulation) box
-ymax                     = +0.5      # max y coordinate of (simulation) box (Ly=ymax-ymin)
-zmin                     = -0.5      # min z coordinate of (simulation) box
-zmax                     = +0.5      # max z coordinate of (simulation) box (Lz=zmax-zmin)
+Lx                       = 1.0       # Length of simulation box in x
+Ly                       = 1.0       # Length of simulation box in y
+Lz                       = 1.0       # Length of simulation box in z
 velocity                 = 1.0       # Target turbulent velocity dispersion
 ampl_coeff               = 0.15      # Amplitude coefficient is used to adjust the driving amplitude to approach the desired target velocity dispersion.
                                      # Note that it scales as velocity/velocity_measured, e.g., given a target velocity dispersion of 'velocity' and
@@ -25,9 +22,9 @@ k_max                    = 3.0       # Maximum driving wavenumber in units of 2p
                                      # even if Lx != Ly != Lz, because the actual modes are set based on Lx, Ly, Lz during initialisation.
 sol_weight               = 0.5       # 1.0: solenoidal driving, 0.0: compressive driving, 0.5: natural mixture
 spect_form               = 1         # 0: band/rectangle/constant, 1: paraboloid, 2: power law
-power_law_exp            = -2.0      # If st_spectform = 2: spectral power-law exponent (e.g., -5/3: Kolmogorov; -2: Burgers)
-angles_exp               = 1.0       # If st_spectform = 2: number of modes (angles) in k-shell surface increases as k^st_angles_exp.
-                                     # For full sampling, st_angles_exp = 2.0; for healpix-type sampling, st_angles_exp = 0.0.
+power_law_exp            = -2.0      # If spect_form = 2: spectral power-law exponent (e.g., -5/3: Kolmogorov; -2: Burgers)
+angles_exp               = 1.0       # If spect_form = 2: number of modes (angles) in k-shell surface increases as k^angles_exp.
+                                     # For full sampling, angles_exp = 2.0; for healpix-type sampling, angles_exp = 0.0.
 random_seed              = 140281    # Random seed for driving sequence
 nsteps_per_turnover_time = 10        # number of turbulence driving pattern updates per turnover time
 # ***************************************************************************************************
