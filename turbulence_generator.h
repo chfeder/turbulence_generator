@@ -37,11 +37,16 @@
 #define MAX(a,b) ((a) > (b) ? a : b)
 
 // forward functions (the following are meant to be called from outside)
+void TurbGen_get_turb_vector_unigrid_single_realisation(
+    const double L[3], const double k_min, const double k_max,
+    const int spect_form, const double power_law_exp, const double angles_exp,
+    const double sol_weight, const int random_seed, const int PE,
+    const double pos_beg[3], const double pos_end[3], const int n[3], float * return_grid[3]);
 int TurbGen_init_turbulence_generator(char * parameter_file, const int PE);
 bool TurbGen_check_for_update(double time);
-void TurbGen_get_turb_vector_unigrid(const double pos_beg[3], const double pos_end[3], const int n[3], float * v_grid[3]);
+void TurbGen_get_turb_vector_unigrid(const double pos_beg[3], const double pos_end[3], const int n[3], float * return_grid[3]);
 void TurbGen_get_turb_vector(const double pos[3], double v[3]);
-void TurbGen_print_info(void);
+void TurbGen_print_info(char * print_mode);
 // forward functions (the following are primarily for internal use)
 int TurbGen_read_from_parameter_file(char * search, char type, void * ret);
 int TurbGen_init_modes(void);
@@ -72,7 +77,7 @@ struct TurbGenData {
   int spect_form; // spectral form (Band, Parabola, Power Law)
   int nsteps_per_turnover_time; // number of driving patterns per turnover time
   int step; // internal OU step number
-  double xmin, xmax, ymin, ymax, zmin, zmax, Lx; // bounding box
+  double L[3]; // domain physical length L[dim] with dim = X, Y, Z
   double decay; // auto-correlation timescale
   double dt; // time step for OU update and for generating driving patterns
   double energy; // driving energy
@@ -83,6 +88,48 @@ struct TurbGenData {
   double angles_exp; // for power-law spectrum: angles exponent for sparse sampling
 };
 static struct TurbGenData tgd; // create TurbGenData structure 'tgd'
+
+
+// ******************************************************
+void TurbGen_get_turb_vector_unigrid_single_realisation(
+  const double L[3], const double k_min, const double k_max,
+  const int spect_form, const double power_law_exp, const double angles_exp,
+  const double sol_weight, const int random_seed, const int PE,
+  const double pos_beg[3], const double pos_end[3], const int n[3], float * return_grid[3]) {
+// ******************************************************
+// A single call to this function will return a turbulent vector field with the properties
+// specified as input arguments; see descriptions below.
+// The last 4 arguments specify the desired position and size of the turbulent vector field to
+// be returned into 'return_grid' (see internal call to TurbGen_get_turb_vector_unigrid for more information).
+// ******************************************************
+  // set internal parameters
+  tgd.L[X] = L[X]; // Length of box in x; used for wavenumber conversion below
+  tgd.L[Y] = L[Y]; // Length of box in y
+  tgd.L[Z] = L[Z]; // Length of box in z
+  tgd.stir_min = (k_min-DBL_EPSILON) * 2*M_PI / tgd.L[X]; // Minimum driving wavenumber <~  k_min * 2pi / Lx
+  tgd.stir_max = (k_max+DBL_EPSILON) * 2*M_PI / tgd.L[X]; // Maximum driving wavenumber >~  k_max * 2pi / Lx
+  tgd.spect_form = spect_form; // (0: band/rectangle/constant, 1: paraboloid, 2: power law)
+  tgd.power_law_exp = power_law_exp; // power-law amplitude exponent (only if spect_form = 2, i.e., power law)
+  tgd.angles_exp = angles_exp; // angles exponent (only if spect_form = 2, i.e., power law)
+  tgd.sol_weight = sol_weight; // solenoidal weight (0: compressive, 0.5: natural mix, 1.0: solenoidal)
+  tgd.seed = random_seed; // tgd.seed = tgd.random_seed; // copy orignial seed into local seed;
+  tgd.PE = PE;
+  tgd.OUvar = 10.0; // Ornstein-Uhlenbeck variance
+  TurbGen_printf("===============================================================================\n");
+  // this makes the rms of the turbulent field independent of the solenoidal weight
+  tgd.sol_weight_norm = sqrt(3.0/tgd.ndim)*sqrt(3.0)*1.0/sqrt(1.0-2.0*tgd.sol_weight+tgd.ndim*pow(tgd.sol_weight,2.0));
+  // initialise modes
+  TurbGen_init_modes();
+  // initialise Ornstein-Uhlenbeck sequence
+  TurbGen_OU_noise_init();
+  // calculate solenoidal and compressive coefficients (aka, akb) from OUphases
+  TurbGen_get_decomposition_coeffs();
+  // print info
+  TurbGen_print_info("single_realisation");
+  TurbGen_printf("===============================================================================\n");
+  // call to get turbulent field on uniform grid
+  TurbGen_get_turb_vector_unigrid(pos_beg, pos_end, n, return_grid);
+} // TurbGen_init_turbulence_generator
 
 
 // ******************************************************
@@ -105,12 +152,9 @@ int TurbGen_init_turbulence_generator(char * parameter_file, const int PE) {
   // read parameter file
   double k_driv, k_min, k_max, ampl_coeff;
   TurbGen_read_from_parameter_file("ndim", 'i', &tgd.ndim);
-  TurbGen_read_from_parameter_file("xmin", 'd', &tgd.xmin);
-  TurbGen_read_from_parameter_file("xmax", 'd', &tgd.xmax);
-  TurbGen_read_from_parameter_file("ymin", 'd', &tgd.ymin);
-  TurbGen_read_from_parameter_file("ymax", 'd', &tgd.ymax);
-  TurbGen_read_from_parameter_file("zmin", 'd', &tgd.zmin);
-  TurbGen_read_from_parameter_file("zmax", 'd', &tgd.zmax);
+  TurbGen_read_from_parameter_file("Lx", 'd', &tgd.L[X]); // Length of box in x
+  TurbGen_read_from_parameter_file("Lx", 'd', &tgd.L[Y]); // Length of box in y
+  TurbGen_read_from_parameter_file("Ly", 'd', &tgd.L[Z]); // Length of box in z
   TurbGen_read_from_parameter_file("velocity", 'd', &tgd.velocity);
   TurbGen_read_from_parameter_file("k_driv", 'd', &k_driv);
   TurbGen_read_from_parameter_file("k_min", 'd', &k_min);
@@ -123,25 +167,22 @@ int TurbGen_init_turbulence_generator(char * parameter_file, const int PE) {
   TurbGen_read_from_parameter_file("random_seed", 'i', &tgd.random_seed);
   TurbGen_read_from_parameter_file("nsteps_per_turnover_time", 'i', &tgd.nsteps_per_turnover_time);
   // define derived physical quantities
-  tgd.Lx = tgd.xmax-tgd.xmin;                             // Length of box in x; used for normalisations below
-  tgd.stir_min = (k_min-DBL_EPSILON) * 2*M_PI / tgd.Lx;   // Minimum driving wavenumber <~  k_min * 2pi / Lx
-  tgd.stir_max = (k_max+DBL_EPSILON) * 2*M_PI / tgd.Lx;   // Maximum driving wavenumber >~  k_max * 2pi / Lx
-  tgd.decay = tgd.Lx / k_driv / tgd.velocity;             // Auto-correlation time, t_turb = Lx / k_driv / velocity;
-                                                          // i.e., turbulent turnover (crossing) time; with k_driv in units of 2pi/Lx
-  tgd.energy = pow(ampl_coeff*tgd.velocity,3.0) / tgd.Lx; // Energy input rate => driving amplitude ~ sqrt(energy/decay)
-                                                          // Note that energy input rate ~ velocity^3 * L_box^-1
-                                                          // ampl_coeff is the amplitude coefficient and needs to be
-                                                          // adjusted to approach actual target velocity dispersion
-  tgd.OUvar = sqrt(tgd.energy/tgd.decay);                 // Ornstein-Uhlenbeck variance
-  tgd.dt = tgd.decay / tgd.nsteps_per_turnover_time;      // time step in OU process and for creating new driving pattern
-  tgd.step = -1;                                          // set internal OU step to 0 for start-up
-  tgd.seed = tgd.random_seed;                             // copy orignial seed into local seed;
-                                                          //local seeds gets updated everytime RNG is called
-  // this makes the rms of the turbulent field constant, irrespective of the solenoidal weight
-  if (tgd.ndim == 3) tgd.sol_weight_norm = sqrt(3.0/3.0)*sqrt(3.0)*1.0/sqrt(1.0-2.0*tgd.sol_weight+3.0*pow(tgd.sol_weight,2.0));
-  if (tgd.ndim == 2) tgd.sol_weight_norm = sqrt(3.0/2.0)*sqrt(3.0)*1.0/sqrt(1.0-2.0*tgd.sol_weight+2.0*pow(tgd.sol_weight,2.0));
-  if (tgd.ndim == 1) tgd.sol_weight_norm = sqrt(3.0/1.0)*sqrt(3.0)*1.0/sqrt(1.0-2.0*tgd.sol_weight+1.0*pow(tgd.sol_weight,2.0));
+  tgd.stir_min = (k_min-DBL_EPSILON) * 2*M_PI / tgd.L[X];   // Minimum driving wavenumber <~  k_min * 2pi / Lx
+  tgd.stir_max = (k_max+DBL_EPSILON) * 2*M_PI / tgd.L[X];   // Maximum driving wavenumber >~  k_max * 2pi / Lx
+  tgd.decay = tgd.L[X] / k_driv / tgd.velocity;             // Auto-correlation time, t_turb = Lx / k_driv / velocity;
+                                                            // i.e., turbulent turnover (crossing) time; with k_driv in units of 2pi/Lx
+  tgd.energy = pow(ampl_coeff*tgd.velocity,3.0) / tgd.L[X]; // Energy input rate => driving amplitude ~ sqrt(energy/decay)
+                                                            // Note that energy input rate ~ velocity^3 * L_box^-1
+                                                            // ampl_coeff is the amplitude coefficient and needs to be
+                                                            // adjusted to approach actual target velocity dispersion
+  tgd.OUvar = sqrt(tgd.energy/tgd.decay);                   // Ornstein-Uhlenbeck variance
+  tgd.dt = tgd.decay / tgd.nsteps_per_turnover_time;        // time step in OU process and for creating new driving pattern
+  tgd.step = -1;                                            // set internal OU step to 0 for start-up
+  tgd.seed = tgd.random_seed;                               // copy orignial seed into local seed;
+                                                            //local seeds gets updated everytime RNG is called
   TurbGen_printf("===============================================================================\n");
+  // this makes the rms of the turbulent field independent of the solenoidal weight
+  tgd.sol_weight_norm = sqrt(3.0/tgd.ndim)*sqrt(3.0)*1.0/sqrt(1.0-2.0*tgd.sol_weight+tgd.ndim*pow(tgd.sol_weight,2.0));
   // initialise modes
   TurbGen_init_modes();
   // initialise Ornstein-Uhlenbeck sequence
@@ -149,7 +190,7 @@ int TurbGen_init_turbulence_generator(char * parameter_file, const int PE) {
   // calculate solenoidal and compressive coefficients (aka, akb) from OUphases
   TurbGen_get_decomposition_coeffs();
   // print info
-  TurbGen_print_info();
+  TurbGen_print_info("driving");
   TurbGen_printf("===============================================================================\n");
   return 0;
 } // TurbGen_init_turbulence_generator
@@ -181,13 +222,13 @@ bool TurbGen_check_for_update(double time) {
 
 
 // ******************************************************
-void TurbGen_get_turb_vector_unigrid(const double pos_beg[3], const double pos_end[3], const int n[3], float * v_grid[3]) {
+void TurbGen_get_turb_vector_unigrid(const double pos_beg[3], const double pos_end[3], const int n[3], float * return_grid[3]) {
 // ******************************************************
 // Compute 3D physical turbulent vector field on a 3D uniform grid,
 // provided start coordinate pos_beg[3] and end coordinate pos_end[3]
 // of the grid in (x,y,x) and number of points in grid n[3].
-// Return into turbulent vector field into float * v_grid[3].
-// Note that index in v_grid[X][index] is looped with x (index i)
+// Return into turbulent vector field into float * return_grid[3].
+// Note that index in return_grid[X][index] is looped with x (index i)
 // as the inner loop and with z (index k) as the outer loop.
 // ******************************************************
   if (tgd.verbose) TurbGen_printf("pos_beg = %f %f %f, pos_end = %f %f %f, n = %i %i %i\n",
@@ -243,9 +284,9 @@ void TurbGen_get_turb_vector_unigrid(const double pos_beg[3], const double pos_e
         }
         // copy into return grid
         long index = k*n[X]*n[Y] + j*n[X] + i;
-        v_grid[X][index] = (float)v[X];
-        v_grid[Y][index] = (float)v[Y];
-        v_grid[Z][index] = (float)v[Z];
+        return_grid[X][index] = (float)v[X];
+        return_grid[Y][index] = (float)v[Y];
+        return_grid[Z][index] = (float)v[Z];
       } // i
     } // j
   } // k
@@ -292,22 +333,31 @@ void TurbGen_get_turb_vector(const double pos[3], double v[3]) {
 
 
 // ******************************************************
-void TurbGen_print_info(void) {
+void TurbGen_print_info(char * print_mode) {
 // ******************************************************
-  TurbGen_printf("Initialized %i modes for turbulence based on parameter file '%s'.\n", tgd.n_modes, tgd.parameter_file);
+  if (strcmp("driving", print_mode) == 0) {
+    TurbGen_printf("Initialized %i modes for turbulence driving based on parameter file '%s'.\n", tgd.n_modes, tgd.parameter_file);
+  }
+  if (strcmp("single_realisation", print_mode) == 0) {
+    TurbGen_printf("Initialized %i modes for generating a single turbulent realisation.\n", tgd.n_modes);
+  }
   if (tgd.spect_form == 0) TurbGen_printf(" spectral form                                       = %i (Band)\n", tgd.spect_form);
   if (tgd.spect_form == 1) TurbGen_printf(" spectral form                                       = %i (Parabola)\n", tgd.spect_form);
   if (tgd.spect_form == 2) TurbGen_printf(" spectral form                                       = %i (Power Law)\n", tgd.spect_form);
   if (tgd.spect_form == 2) TurbGen_printf(" power-law exponent                                  = %e\n", tgd.power_law_exp);
   if (tgd.spect_form == 2) TurbGen_printf(" power-law angles sampling exponent                  = %e\n", tgd.angles_exp);
-  TurbGen_printf(" box size Lx                                         = %e\n", tgd.Lx);
+  TurbGen_printf(" box size Lx                                         = %e\n", tgd.L[X]);
   TurbGen_printf(" turbulent dispersion                                = %e\n", tgd.velocity);
-  TurbGen_printf(" auto-correlation time                               = %e\n", tgd.decay);
-  TurbGen_printf("  -> characteristic turbulent wavenumber (in 2pi/Lx) = %e\n", tgd.Lx / tgd.velocity / tgd.decay);
-  TurbGen_printf(" minimum wavenumber (in 2pi/Lx)                      = %e\n", tgd.stir_min / (2*M_PI) * tgd.Lx);
-  TurbGen_printf(" maximum wavenumber (in 2pi/Lx)                      = %e\n", tgd.stir_max / (2*M_PI) * tgd.Lx);
-  TurbGen_printf(" driving energy (injection rate)                     = %e\n", tgd.energy);
-  TurbGen_printf("  -> amplitude coefficient                           = %e\n", pow(tgd.energy*tgd.Lx,1.0/3.0) / tgd.velocity);
+  if (strcmp("driving", print_mode) == 0) {
+    TurbGen_printf(" auto-correlation time                               = %e\n", tgd.decay);
+    TurbGen_printf("  -> characteristic turbulent wavenumber (in 2pi/Lx) = %e\n", tgd.L[X] / tgd.velocity / tgd.decay);
+  }
+  TurbGen_printf(" minimum wavenumber (in 2pi/Lx)                      = %e\n", tgd.stir_min / (2*M_PI) * tgd.L[X]);
+  TurbGen_printf(" maximum wavenumber (in 2pi/Lx)                      = %e\n", tgd.stir_max / (2*M_PI) * tgd.L[X]);
+  if (strcmp("driving", print_mode) == 0) {
+    TurbGen_printf(" driving energy (injection rate)                     = %e\n", tgd.energy);
+    TurbGen_printf("  -> amplitude coefficient                           = %e\n", pow(tgd.energy*tgd.L[X],1.0/3.0) / tgd.velocity);
+  }
   TurbGen_printf(" solenoidal weight (0.0: comp, 0.5: mix, 1.0: sol)   = %e\n", tgd.sol_weight);
   TurbGen_printf("  -> solenoidal weight norm (set based on Ndim = %i)  = %e\n", tgd.ndim, tgd.sol_weight_norm);
   TurbGen_printf(" random seed                                         = %i\n", tgd.random_seed);
@@ -366,12 +416,11 @@ int TurbGen_init_modes(void) {
 // initialise all turbulent modes information
 // ******************************************************
 
-  int ikxmin, ikxmax, ikymin, ikymax, ikzmin, ikzmax;
-  int ikx, iky, ikz, tot_n_modes;
-  double kx, ky, kz, k, kc, Lx, Ly, Lz, amplitude, parab_prefact;
+  int ikmin[3], ikmax[3], ik[3], tot_n_modes;
+  double k[3], ka, kc, amplitude, parab_prefact;
 
   // applies in case of power law (spect_form == 2)
-  int iang, nang, ik, ikmin, ikmax;
+  int iang, nang;
   double rand, phi, theta;
 
   // this is for spect_form = 1 (paraboloid) only
@@ -382,30 +431,26 @@ int TurbGen_init_modes(void) {
   kc = tgd.stir_min;
   if (tgd.spect_form == 1) kc = 0.5*(tgd.stir_min+tgd.stir_max);
 
-  ikxmin = 0;
-  ikymin = 0;
-  ikzmin = 0;
+  ikmin[X] = 0;
+  ikmin[Y] = 0;
+  ikmin[Z] = 0;
 
-  ikxmax = 256;
-  ikymax = 0;
-  ikzmax = 0;
-  if (tgd.ndim > 1) ikymax = 256;
-  if (tgd.ndim > 2) ikzmax = 256;
-
-  Lx = tgd.xmax - tgd.xmin;
-  Ly = tgd.ymax - tgd.ymin;
-  Lz = tgd.zmax - tgd.zmin;
+  ikmax[X] = 256;
+  ikmax[Y] = 0;
+  ikmax[Z] = 0;
+  if (tgd.ndim > 1) ikmax[Y] = 256;
+  if (tgd.ndim > 2) ikmax[Z] = 256;
 
   // determine the number of required modes (in case of full sampling)
   tgd.n_modes = 0;
-  for (ikx = ikxmin; ikx <= ikxmax; ikx++) {
-    kx = 2*M_PI * ikx / Lx;
-    for (iky = ikymin; iky <= ikymax; iky++) {
-      ky = 2*M_PI * iky / Ly;
-      for (ikz = ikzmin; ikz <= ikzmax; ikz++) {
-        kz = 2*M_PI * ikz / Lz;
-        k = sqrt( kx*kx + ky*ky + kz*kz );
-        if ((k >= tgd.stir_min) && (k <= tgd.stir_max)) {
+  for (ik[X] = ikmin[X]; ik[X] <= ikmax[X]; ik[X]++) {
+    k[X] = 2*M_PI * ik[X] / tgd.L[X];
+    for (ik[Y] = ikmin[Y]; ik[Y] <= ikmax[Y]; ik[Y]++) {
+      k[Y] = 2*M_PI * ik[Y] / tgd.L[Y];
+      for (ik[Z] = ikmin[Z]; ik[Z] <= ikmax[Z]; ik[Z]++) {
+        k[Z] = 2*M_PI * ik[Z] / tgd.L[Z];
+        ka = sqrt( k[X]*k[X] + k[Y]*k[Y] + k[Z]*k[Z] );
+        if ((ka >= tgd.stir_min) && (ka <= tgd.stir_max)) {
             tgd.n_modes++;
             if (tgd.ndim > 1) tgd.n_modes += 1;
             if (tgd.ndim > 2) tgd.n_modes += 2;
@@ -420,7 +465,7 @@ int TurbGen_init_modes(void) {
       TurbGen_printf("Too many stirring modes");
       exit(-1);
     }
-    TurbGen_printf("Generating %i driving modes...\n", tot_n_modes);
+    TurbGen_printf("Generating %i turbulent modes...\n", tot_n_modes);
   }
 
   tgd.n_modes = -1; // reset and use as index
@@ -429,58 +474,53 @@ int TurbGen_init_modes(void) {
   // === for band and parabolic spectrum, use the standard full sampling
   if (tgd.spect_form != 2) {
 
-    // loop over all kx, ky, kz to generate driving modes
-    for (ikx = ikxmin; ikx <= ikxmax; ikx++) {
-      kx = 2*M_PI * ikx / Lx;
-      for (iky = ikymin; iky <= ikymax; iky++) {
-        ky = 2*M_PI * iky / Ly;
-        for (ikz = ikzmin; ikz <= ikzmax; ikz++) {
-          kz = 2*M_PI * ikz / Lz;
+    // loop over all kx, ky, kz to generate turbulent modes
+    for (ik[X] = ikmin[X]; ik[X] <= ikmax[X]; ik[X]++) {
+      k[X] = 2*M_PI * ik[X] / tgd.L[X];
+      for (ik[Y] = ikmin[Y]; ik[Y] <= ikmax[Y]; ik[Y]++) {
+        k[Y] = 2*M_PI * ik[Y] / tgd.L[Y];
+        for (ik[Z] = ikmin[Z]; ik[Z] <= ikmax[Z]; ik[Z]++) {
+          k[Z] = 2*M_PI * ik[Z] / tgd.L[Z];
 
-          k = sqrt( kx*kx + ky*ky + kz*kz );
+          ka = sqrt( k[X]*k[X] + k[Y]*k[Y] + k[Z]*k[Z] );
 
-          if ((k >= tgd.stir_min) && (k <= tgd.stir_max)) {
+          if ((ka >= tgd.stir_min) && (ka <= tgd.stir_max)) {
 
-            if (tgd.spect_form == 0) amplitude = 1.0;                                   // Band
-            if (tgd.spect_form == 1) amplitude = fabs(parab_prefact*pow(k-kc,2.0)+1.0); // Parabola
+            if (tgd.spect_form == 0) amplitude = 1.0;                                    // Band
+            if (tgd.spect_form == 1) amplitude = fabs(parab_prefact*pow(ka-kc,2.0)+1.0); // Parabola
 
             // note: power spectrum ~ amplitude^2 (1D), amplitude^2 * 2pi k (2D), amplitude^2 * 4pi k^2 (3D) 
-            amplitude = sqrt(amplitude) * pow(kc/k,(tgd.ndim-1)/2.0);
+            amplitude = sqrt(amplitude) * pow(kc/ka,(tgd.ndim-1)/2.0);
 
             tgd.n_modes++;
             tgd.ampl[tgd.n_modes] = amplitude;
             if (tgd.verbose) TurbGen_printf("init_stir:  ampl[%i] = %f\n", tgd.n_modes, tgd.ampl[tgd.n_modes]);
-            tgd.mode[X][tgd.n_modes] = kx;
-            tgd.mode[Y][tgd.n_modes] = ky;
-            tgd.mode[Z][tgd.n_modes] = kz;
+            tgd.mode[X][tgd.n_modes] = k[X];
+            tgd.mode[Y][tgd.n_modes] = k[Y];
+            tgd.mode[Z][tgd.n_modes] = k[Z];
 
             if (tgd.ndim > 1) {
-
               tgd.n_modes++;
               tgd.ampl[tgd.n_modes] = amplitude;
               if (tgd.verbose) TurbGen_printf("init_stir:  ampl[%i] = %f\n", tgd.n_modes, tgd.ampl[tgd.n_modes]);
-              tgd.mode[X][tgd.n_modes] =  kx;
-              tgd.mode[Y][tgd.n_modes] = -ky;
-              tgd.mode[Z][tgd.n_modes] =  kz;
-
+              tgd.mode[X][tgd.n_modes] =  k[X];
+              tgd.mode[Y][tgd.n_modes] = -k[Y];
+              tgd.mode[Z][tgd.n_modes] =  k[Z];
             }
 
             if (tgd.ndim > 2) {
-
               tgd.n_modes++;
               tgd.ampl[tgd.n_modes] = amplitude;
               if (tgd.verbose) TurbGen_printf("init_stir:  ampl[%i] = %f\n", tgd.n_modes, tgd.ampl[tgd.n_modes]);
-              tgd.mode[X][tgd.n_modes] =  kx;
-              tgd.mode[Y][tgd.n_modes] =  ky;
-              tgd.mode[Z][tgd.n_modes] = -kz;
-
+              tgd.mode[X][tgd.n_modes] =  k[X];
+              tgd.mode[Y][tgd.n_modes] =  k[Y];
+              tgd.mode[Z][tgd.n_modes] = -k[Z];
               tgd.n_modes++;
               tgd.ampl[tgd.n_modes] = amplitude;
               if (tgd.verbose) TurbGen_printf("init_stir:  ampl[%i] = %f\n", tgd.n_modes, tgd.ampl[tgd.n_modes]);
-              tgd.mode[X][tgd.n_modes] =  kx;
-              tgd.mode[Y][tgd.n_modes] = -ky;
-              tgd.mode[Z][tgd.n_modes] = -kz;
-
+              tgd.mode[X][tgd.n_modes] =  k[X];
+              tgd.mode[Y][tgd.n_modes] = -k[Y];
+              tgd.mode[Z][tgd.n_modes] = -k[Z];
             }
 
             if ((tgd.n_modes+1) % 1000 == 0) TurbGen_printf(" ... %i of total %i modes generated...\n", tgd.n_modes+1, tot_n_modes);
@@ -496,7 +536,7 @@ int TurbGen_init_modes(void) {
   // === with the number of angles growing ~ k^angles_exp
   if (tgd.spect_form == 2) {
 
-    TurbGen_printf("There would be %i driving modes, if k-space were fully sampled (angles_exp = 2.0)...\n", tot_n_modes);
+    TurbGen_printf("There would be %i turbulent modes, if k-space were fully sampled (angles_exp = 2.0)...\n", tot_n_modes);
     TurbGen_printf("Here we are using angles_exp = %f\n", tgd.angles_exp);
 
     // initialize additional random numbers (uniformly distributed) to randomise angles
@@ -504,15 +544,15 @@ int TurbGen_init_modes(void) {
     rand = TurbGen_ran2(&seed);
 
     // loop between smallest and largest k
-    ikmin = MAX(1, round(tgd.stir_min*Lx/(2*M_PI)));
-    ikmax =        round(tgd.stir_max*Lx/(2*M_PI));
+    ikmin[0] = MAX(1, round(tgd.stir_min*tgd.L[X]/(2*M_PI)));
+    ikmax[0] =        round(tgd.stir_max*tgd.L[X]/(2*M_PI));
 
-    TurbGen_printf("Generating driving modes within k = [%i, %i]\n", ikmin, ikmax);
+    TurbGen_printf("Generating turbulent modes within k = [%i, %i]\n", ikmin[0], ikmax[0]);
 
-    for (ik = ikmin; ik <= ikmax; ik++) {
+    for (ik[0] = ikmin[0]; ik[0] <= ikmax[0]; ik[0]++) {
 
-      nang = pow(2.0,tgd.ndim) * ceil(pow((double)ik,tgd.angles_exp));
-      TurbGen_printf("ik, number of angles = %i, %i\n", ik, nang);
+      nang = pow(2.0,tgd.ndim) * ceil(pow((double)ik[0],tgd.angles_exp));
+      TurbGen_printf("ik, number of angles = %i, %i\n", ik[0], nang);
 
       for (iang = 1; iang <= nang; iang++) {
 
@@ -526,16 +566,20 @@ int TurbGen_init_modes(void) {
 
         if (tgd.verbose) TurbGen_printf("entering: theta = %f, phi = %f\n", theta, phi);
 
-        rand = ik + TurbGen_ran2(&tgd.seed) - 0.5;
-        kx = 2*M_PI * round(rand*sin(theta)*cos(phi)) / Lx;
-        ky = 0.0;
-        if (tgd.ndim > 1) ky = 2*M_PI * round(rand*sin(theta)*sin(phi)) / Ly;
-        kz = 0.0;
-        if (tgd.ndim > 2) kz = 2*M_PI * round(rand*cos(theta)         ) / Lz;
+        rand = ik[0] + TurbGen_ran2(&tgd.seed) - 0.5;
+        k[X] = 2*M_PI * round(rand*sin(theta)*cos(phi)) / tgd.L[X];
+        if (tgd.ndim > 1)
+          k[Y] = 2*M_PI * round(rand*sin(theta)*sin(phi)) / tgd.L[Y];
+        else
+          k[Y] = 0.0;
+        if (tgd.ndim > 2)
+          k[Z] = 2*M_PI * round(rand*cos(theta)) / tgd.L[Z];
+        else
+          k[Z] = 0.0;
 
-        k = sqrt( kx*kx + ky*ky + kz*kz );
+        ka = sqrt( k[X]*k[X] + k[Y]*k[Y] + k[Z]*k[Z] );
 
-        if ((k >= tgd.stir_min) && (k <= tgd.stir_max)) {
+        if ((ka >= tgd.stir_min) && (ka <= tgd.stir_max)) {
 
           if (tgd.n_modes + pow(2.0,tgd.ndim-1) > tgd_max_n_modes) {
             TurbGen_printf("init_stir:  n_modes = %i, maxmodes = %i", tgd.n_modes, tgd_max_n_modes);
@@ -543,18 +587,18 @@ int TurbGen_init_modes(void) {
             exit(-1);
           }
 
-          amplitude = pow(k/kc,tgd.power_law_exp); // Power law
+          amplitude = pow(ka/kc,tgd.power_law_exp); // Power law
 
           // note: power spectrum ~ amplitude^2 (1D), amplitude^2 * 2pi k (2D), amplitude^2 * 4pi k^2 (3D)
           // ...and correct for the number of angles sampled relative to the full sampling (k^2 per k-shell in 3D)
-          amplitude = sqrt( amplitude * pow((double)ik,tgd.ndim-1) / (double)(nang) * 4.0*sqrt(3.0) ) * pow(kc/k,(tgd.ndim-1)/2.0);
+          amplitude = sqrt( amplitude * pow((double)ik[0],tgd.ndim-1) / (double)(nang) * 4.0*sqrt(3.0) ) * pow(kc/ka,(tgd.ndim-1)/2.0);
 
           tgd.n_modes++;
           tgd.ampl[tgd.n_modes] = amplitude;
           if (tgd.verbose) TurbGen_printf("init_stir:  ampl[%i] = %f\n", tgd.n_modes, tgd.ampl[tgd.n_modes]);
-          tgd.mode[X][tgd.n_modes] = kx;
-          tgd.mode[Y][tgd.n_modes] = ky;
-          tgd.mode[Z][tgd.n_modes] = kz;
+          tgd.mode[X][tgd.n_modes] = k[X];
+          tgd.mode[Y][tgd.n_modes] = k[Y];
+          tgd.mode[Z][tgd.n_modes] = k[Z];
 
           if ((tgd.n_modes+1) % 1000 == 0) TurbGen_printf(" ... %i modes generated...\n", tgd.n_modes+1);
 
@@ -683,7 +727,7 @@ double TurbGen_grn(void) {
 double TurbGen_ran1s(int * idum) {
 // ******************************************************
   static const int IA=16807, IM=2147483647, IQ=127773, IR=2836, NTAB=32;
-  static const double AM=1.0/IM, EPS=1.2e-7, RNMX=1.0-EPS;
+  static const double AM=1.0/IM, RNMX=1.0-1.2e-7;
   if (*idum <= 0) *idum = MAX(-*idum, 1);
   int k = *idum/IQ;
   *idum = IA*(*idum-k*IQ)-IR*k;
@@ -706,7 +750,7 @@ double TurbGen_ran2(int * idum) {
 // ******************************************************
   static const int IM1=2147483563, IM2=2147483399, IMM1=IM1-1, IA1=40014, IA2=40692, IQ1=53668,
                    IQ2=52774, IR1=12211, IR2=3791, NTAB=32, NDIV=1+IMM1/NTAB;
-  static const double AM=1.0/IM1, EPS=1.2e-7, RNMX=1.0-EPS;
+  static const double AM=1.0/IM1, RNMX=1.0-1.2e-7;
   static int idum2 = 123456789;
   static int iy = 0;
   static int iv[NTAB];
