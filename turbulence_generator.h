@@ -73,7 +73,7 @@ struct TurbGenData {
   double OUphases[6*tgd_max_n_modes]; // phases
   double ampl[tgd_max_n_modes]; // amplitudes
   int ndim; // number of spatial dimensions
-  int random_seed, seed; // 'random seed' is the orignial starting seed, then 'seed' gets updated by call to RNG
+  int random_seed, seed; // 'random seed' is the original starting seed, then 'seed' gets updated by call to RNG
   int spect_form; // spectral form (Band, Parabola, Power Law)
   int nsteps_per_turnover_time; // number of driving patterns per turnover time
   int step; // internal OU step number
@@ -112,9 +112,9 @@ void TurbGen_get_turb_vector_unigrid_single_realisation(
   tgd.power_law_exp = power_law_exp; // power-law amplitude exponent (only if spect_form = 2, i.e., power law)
   tgd.angles_exp = angles_exp; // angles exponent (only if spect_form = 2, i.e., power law)
   tgd.sol_weight = sol_weight; // solenoidal weight (0: compressive, 0.5: natural mix, 1.0: solenoidal)
-  tgd.seed = random_seed; // tgd.seed = tgd.random_seed; // copy orignial seed into local seed;
-  tgd.PE = PE;
-  tgd.OUvar = 10.0; // Ornstein-Uhlenbeck variance
+  tgd.seed = random_seed; // set random seed for this realisation
+  tgd.PE = PE; // set MPI rank
+  tgd.OUvar = 1.0; // Ornstein-Uhlenbeck variance (the field needs to be re-normalised outside this call)
   TurbGen_printf("===============================================================================\n");
   // this makes the rms of the turbulent field independent of the solenoidal weight
   tgd.sol_weight_norm = sqrt(3.0/tgd.ndim)*sqrt(3.0)*1.0/sqrt(1.0-2.0*tgd.sol_weight+tgd.ndim*pow(tgd.sol_weight,2.0));
@@ -178,8 +178,8 @@ int TurbGen_init_turbulence_generator(char * parameter_file, const int PE) {
   tgd.OUvar = sqrt(tgd.energy/tgd.decay);                   // Ornstein-Uhlenbeck variance
   tgd.dt = tgd.decay / tgd.nsteps_per_turnover_time;        // time step in OU process and for creating new driving pattern
   tgd.step = -1;                                            // set internal OU step to 0 for start-up
-  tgd.seed = tgd.random_seed;                               // copy orignial seed into local seed;
-                                                            //local seeds gets updated everytime RNG is called
+  tgd.seed = tgd.random_seed;                               // copy original seed into local seed;
+                                                            // local seeds gets updated everytime RNG is called
   TurbGen_printf("===============================================================================\n");
   // this makes the rms of the turbulent field independent of the solenoidal weight
   tgd.sol_weight_norm = sqrt(3.0/tgd.ndim)*sqrt(3.0)*1.0/sqrt(1.0-2.0*tgd.sol_weight+tgd.ndim*pow(tgd.sol_weight,2.0));
