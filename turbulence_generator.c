@@ -141,9 +141,10 @@ int main(void)
     int PE = 0; // in case we call this from an MPI program, we supply the MPI rank here, so we limited fprint to stdout to the MPI master rank
 
     // random example of physical coordinates of a target output grid (pos_beg must be < pos_end):
-    double pos_beg[3] = {0.1, -0.5, 0.3}; // first cell coordinate in uniform grid (x,y,z)
-    double pos_end[3] = {0.4, -0.3, 0.5}; // last  cell coordinate in uniform grid (x,y,z)
-    int n[3] = {10, 20, 13}; // some random number of cells that define the output grid size
+    int n[3] = {64, 64, 64}; // some random number of cells that define the output grid size
+    double d[3]; for (int dim = 0; dim < 3; dim++) d[dim] = L[dim] / n[dim]; // define cell size of uniform grid
+    double pos_beg[3] = {-0.5+d[X]/2, -0.5+d[Y]/2, -0.5+d[Z]/2}; // first cell coordinate in uniform grid (x,y,z); here cell-centered example
+    double pos_end[3] = {+0.5-d[X]/2, +0.5-d[Y]/2, +0.5-d[Z]/2}; // last  cell coordinate in uniform grid (x,y,z); here cell-centered example
     long ntot = n[0]*n[1]*n[2]; // total number of grid cells
     float * grid_out[3]; // output grid (three cartesian components: vx, vy, vz), which receives the turbulent acceleration field
 
@@ -166,6 +167,24 @@ int main(void)
     i = 9; j = 1; k = 4;
     index = k*n[1]*n[0] + j*n[0] + i;
     printf("turbulence_generator: e.g., z-component of turbulent vector field at index i,j,k = (%i %i %i) is %f\n", i,j,k, grid_out[2][index]);
+
+    // compute mean and RMS of vector field
+    double mean[3] = {0.0, 0.0, 0.0};
+    double rms[3] = {0.0, 0.0, 0.0};
+    double std[3] = {0.0, 0.0, 0.0};
+    for (int dim = 0; dim < 3; dim++) {
+      for (long ni = 0; ni < ntot; ni++) {
+        mean[dim] += grid_out[dim][ni];
+        rms [dim] += pow(grid_out[dim][ni],2.0);
+      }
+      mean[dim] /= ntot; // mean
+      rms[dim] = sqrt(rms[dim] / ntot); // root mean squared
+      std[dim] = sqrt(rms[dim]*rms[dim] - mean[dim]*mean[dim]); // standard deviation
+    }
+    printf("turbulence_generator: Turbulent vector field mean (x,y,z) = (%e %e %e)\n", mean[0], mean[1], mean[2]);
+    printf("turbulence_generator: Turbulent vector field  rms (x,y,z) = (%e %e %e)\n",  rms[0],  rms[1],  rms[2]);
+    printf("turbulence_generator: Turbulent vector field  std (x,y,z) = (%e %e %e)\n",  std[0],  std[1],  std[2]);
+    printf("turbulence_generator: Turbulent vector field total 3D std = %e\n", sqrt(std[0]*std[0]+std[1]*std[1]+std[2]*std[2]));
 
     // clean up
     for (int dim = 0; dim < 3; dim++) {
