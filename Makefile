@@ -6,24 +6,23 @@
 #          Christoph Federrath
 #
 
-# C compiler (e.g., gcc, icpc), flags, and HDF5 library path
-CCOMP = mpicc
+# C++ compiler (e.g., g++), flags, and HDF5 library path
+CCOMP = mpicxx
 CFLAGS = -O3
-HDF5_PATH = /opt/local
 
 # binary target
-BIN = turbulence_generator
+BIN = TurbGenDemo
 
 $(BIN) : $(BIN).o
-	$(CCOMP) $(CFLAGS) -o $@ $(BIN).o -L$(HDF5_PATH)/lib -lhdf5
+	$(CCOMP) $(CFLAGS) -o $@ $(BIN).o
 
-.SUFFIXES: .c .h
+.SUFFIXES: .cpp .h
 
-.c.o:
-	$(CCOMP) $(CFLAGS) -c $*.c -I$(HDF5_PATH)/include
+.cpp.o:
+	$(CCOMP) $(CFLAGS) -c $*.cpp
 
 clean :
 	rm -f *.o *~ $(BIN)
 
 # dependencies
-$(BIN).o : $(BIN).h
+$(BIN).o : TurbGen.h
