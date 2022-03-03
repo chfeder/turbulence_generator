@@ -28,6 +28,7 @@
 #include <iostream>
 #include <string>
 #include <vector>
+#include <algorithm>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -36,9 +37,6 @@
 #include <float.h>
 #include <string.h>
 #include <math.h>
-
-#define MIN(a,b) ((a) < (b) ? a : b)
-#define MAX(a,b) ((a) > (b) ? a : b)
 
 namespace NameSpaceTurbGen {
     // constants
@@ -381,8 +379,8 @@ class TurbGen
         TurbGen_printf(" minimum wavenumber (in 2pi/Lx)                      = %e\n", stir_min / (2*M_PI) * L[X]);
         TurbGen_printf(" maximum wavenumber (in 2pi/Lx)                      = %e\n", stir_max / (2*M_PI) * L[X]);
         if (print_mode == "driving") {
-            TurbGen_printf(" driving energy (injection rate)                     = %e\n", energy);
-            TurbGen_printf("  -> amplitude coefficient                           = %e\n", pow(energy*L[X],1.0/3.0) / velocity);
+            TurbGen_printf(" amplitude coefficient                               = %e\n", pow(energy*L[X],1.0/3.0) / velocity);
+            TurbGen_printf("  -> driving energy (injection rate)                 = %e\n", energy);
         }
         TurbGen_printf(" solenoidal weight (0.0: comp, 0.5: mix, 1.0: sol)   = %e\n", sol_weight);
         TurbGen_printf("  -> solenoidal weight norm (set based on Ndim = %i)  = %e\n", ndim, sol_weight_norm);
@@ -413,7 +411,7 @@ class TurbGen
                 char * substr3 = strstr(substr1, "#"); // deal with comment '# ...'
                 int end_index = strlen(substr1);
                 if ((substr2 != NULL) && (substr3 != NULL)) { // if comment is present, reduce end_index
-                    end_index -= MAX(strlen(substr2),strlen(substr3));
+                    end_index -= std::max(strlen(substr2),strlen(substr3));
                 } else { // if comment is present, reduce end_index
                     if (substr2 != NULL) end_index -= strlen(substr2);
                     if (substr3 != NULL) end_index -= strlen(substr3);
@@ -566,8 +564,8 @@ class TurbGen
             rand = TurbGen_ran2(&seed_init);
 
             // loop between smallest and largest k
-            ikmin[0] = MAX(1, round(stir_min*L[X]/(2*M_PI)));
-            ikmax[0] =        round(stir_max*L[X]/(2*M_PI));
+            ikmin[0] = std::max(1, (int)round(stir_min*L[X]/(2*M_PI)));
+            ikmax[0] =             (int)round(stir_max*L[X]/(2*M_PI));
 
             TurbGen_printf("Generating turbulent modes within k = [%i, %i]\n", ikmin[0], ikmax[0]);
 
@@ -753,12 +751,12 @@ class TurbGen
         // ******************************************************
         static const int IA=16807, IM=2147483647, IQ=127773, IR=2836;
         static const double AM=1.0/IM, RNMX=1.0-1.2e-7;
-        if (*idum <= 0) *idum = MAX(-*idum, 1);
+        if (*idum <= 0) *idum = std::max(-*idum, 1);
         int k = *idum/IQ;
         *idum = IA*(*idum-k*IQ)-IR*k;
         if (*idum < 0) *idum = *idum+IM;
         int iy = *idum;
-        double ret = MIN(AM*iy, RNMX);
+        double ret = std::min(AM*iy, RNMX);
         return ret;
     }; // TurbGen_ran1s
 
@@ -781,7 +779,7 @@ class TurbGen
         static int iv[NTAB];
         int j, k;
         if (*idum <= 0) {
-            *idum = MAX(-*idum, 1);
+            *idum = std::max(-*idum, 1);
             idum2 = *idum;
             for (j = NTAB+7; j >= 0; j--) {
                 k = *idum/IQ1;
@@ -801,7 +799,7 @@ class TurbGen
         iy = iv[j]-idum2;
         iv[j] = *idum;
         if (iy < 1) iy += IMM1;
-        double ret = MIN(AM*iy, RNMX);
+        double ret = std::min(AM*iy, RNMX);
         return ret;
     }; // TurbGen_ran2
 
