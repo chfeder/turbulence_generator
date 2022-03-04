@@ -1,12 +1,5 @@
-This is the collection of source code files used in the FLASH hydro code for driving turbulence.
+This is the collection of source code files used in the FLASH hydro code for driving turbulence or generating turbulent initial conditions.
 
-It uses the C implementation of turbulence_generator.h from Fortran (with F-to-C interface in st_turbulence_generator_interface.c) to construct the physical acceleration field from the Fourier mode sequence in the driving file .inp file.
-
-This code can be used as a template for other hydro codes. Short description of main files:
-
-- Stir_data.F90 contains shared data for the FLASH module.
-- Stir_init.F90 initialises the turbulence generator.
-- Stir.F90 couples the generated physical acceleration field to the hydro equations, i.e., it applies it as an acceleration, which modifies the velocity field (VELX, VELY, VELZ). It also checks for updates of the turbulence driving pattern.
-- Stir_computeDt.F90 implements a time step constraint based on the turbulence driving; for typical applications, this is usually not actually necessary, but included here for completeness.
-- st_turbulence_generator_interface.c is the C-to_fortran interface to functions in turbulence_generator.h.
-- Config is the FLASH internal module configuration file.
+- StirFromFileMain is the turbulence driving module.
+- StirICsMain is the module that generates turbulent initial velocity and/or magnetic fields.
+- legacy_fortran uses the old Fortran-only based driving method; should not be used; just here for reference.
