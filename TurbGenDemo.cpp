@@ -5,7 +5,6 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <float.h>
 #include "TurbGen.h"
 
 int main(void)
@@ -21,14 +20,14 @@ int main(void)
     // If MPI is present, we pass the MPI rank to TurbGen_init_turbulence_generator;
     // note that the MPI rank is simply to control printf to stdout, i.e., only rank 0 will print.
     // This function should only be called once, i.e., to initialise the turbulence generator.
-    tg.TurbGen_init_driving("turbulence_generator.inp");
+    tg.init_driving("turbulence_generator.inp");
 
     // as an example, let's loop through a few time steps (e.g., of a hydro code)
     // to demonstrate how the turbulence generator is updated and how the physical turbulent
     // acceleration field is returned by "turbulence_generator.h
 
     // get the turbulent turnover time
-    double t_turb = tg.GetTurnoverTime();
+    double t_turb = tg.get_turnover_time();
     // let's go through 5 turnover times based on the inputs in 'parameter_file' above
     double t_end = 5.0 * t_turb;
 
@@ -51,13 +50,13 @@ int main(void)
       // Note that this call to TurbGen_update(time) is very cheap and returns right away if current input
       // time means that no update of the turbulence driving pattern is necessary; therefore, we can safely
       // call this in every hydro timestep without wasting compute time.
-      bool have_updated_pattern = tg.TurbGen_check_for_update(time);
+      bool have_updated_pattern = tg.check_for_update(time);
 
       if (have_updated_pattern) {
         // say we want the turbulent vector field value at some physical position pos[3]
         double pos[3] = {0.1, -0.5, 0.3};
         double v[3]; // return vector
-        tg.TurbGen_get_turb_vector(pos, v); // get the vector
+        tg.get_turb_vector(pos, v); // get the vector
         printf("turbulence_generator: turbulent vector at position (%f %f %f) is vx, vy, vz = %f %f %f\n",
                 pos[0], pos[1], pos[2], v[0], v[1], v[2]);
       }
@@ -80,10 +79,10 @@ int main(void)
     // at every requested position; here, it is done for an entire block (uniform grid) of data.
 
     // first init as in example 1
-    tg.TurbGen_init_driving("turbulence_generator.inp");
+    tg.init_driving("turbulence_generator.inp");
 
     // now fast forward to target time (e.g., after 5 turbulent turnover times)
-    tg.TurbGen_check_for_update(5*tg.GetTurnoverTime());
+    tg.check_for_update(5*tg.get_turnover_time());
 
     // random example of physical coordinates of a target output grid (pos_beg must be < pos_end):
     double pos_beg[3] = {0.1, -0.5, 0.3}; // first cell coordinate in uniform grid (x,y,z)
@@ -96,7 +95,7 @@ int main(void)
     for (int dim = 0; dim < 3; dim++) grid_out[dim] = new float[ntot];
 
     // call to return 3 uniform grids with the 3 components of the turbulent acceleration field at requested positions
-    tg.TurbGen_get_turb_vector_unigrid(pos_beg, pos_end, n, grid_out);
+    tg.get_turb_vector_unigrid(pos_beg, pos_end, n, grid_out);
 
     // indices in x,y,z, i.e., i,j,k, and 1D index
     int i, j, k; long index;
@@ -151,10 +150,10 @@ int main(void)
     for (int dim = 0; dim < 3; dim++) grid_out[dim] = new float[ntot];
 
     // initialise generator to return a single turbulent realisation based on input parameters
-    tg.TurbGen_init_single_realisation(ndim, L, k_min, k_max, spect_form, power_law_exp, angles_exp, sol_weight, random_seed);
+    tg.init_single_realisation(ndim, L, k_min, k_max, spect_form, power_law_exp, angles_exp, sol_weight, random_seed);
 
     // call to return 3 uniform grids with the 3 components of the turbulent acceleration field at requested positions
-    tg.TurbGen_get_turb_vector_unigrid(pos_beg, pos_end, n, grid_out);
+    tg.get_turb_vector_unigrid(pos_beg, pos_end, n, grid_out);
 
     // indices in x,y,z, i.e., i,j,k, and 1D index
     int i, j, k; long index;
