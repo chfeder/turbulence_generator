@@ -1,16 +1,16 @@
-# Turbulence Driving Generator #
+# Turbulence Generator #
 
-This tool generates a time sequence of random Fourier modes, used to drive turbulence in hydrodynamical simulation codes.
+This tool generates a time sequence of random Fourier modes, used to drive turbulence in hydrodynamical simulation codes. It can also generate single turbulent realisations.
 
 Turbulence driving based on this method is currently supported by implementations in AREPO, FLASH, GADGET, PHANTOM, PLUTO, QUOKKA.
 
 Main files:
 
-* 'turbulence_generator.h' contains the main library functions and data for using the generator.
-* 'turbulence_generator.c' contains a basic example for how to include and use the generator.
-* 'turbulence_generator.inp' is the parameter file that controls the turbulence generator.
+* 'TurbGen.h' contains the main C++ class with functions and data structures used by the generator.
+* 'TurbGenDemo.C' contains 3 basic examples for how to include and use the generator.
+* 'turbulence_generator.inp' is the parameter file that controls the turbulence driving.
 
-Directory 'plugins' contains some examples of how the turbulence_generator.h library is used in hydrodynamical codes.
+Directory 'plugins' contains some examples of how TurbGen.h is used in hydrodynamical codes.
 
 ### What are the first steps when working with this repository? ###
 
