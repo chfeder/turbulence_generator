@@ -1,5 +1,5 @@
 #
-#  Makefile for turbulence forcing generator.
+#  Makefile for turbulence generator
 #
 #  Written by
 #
