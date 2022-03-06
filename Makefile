@@ -10,19 +10,15 @@
 CCOMP = mpicxx
 CFLAGS = -O3
 
-# binary target
-BIN = TurbGenDemo
+BINS = TurbGen TurbGenDemo
 
-$(BIN) : $(BIN).o
-	$(CCOMP) $(CFLAGS) -o $@ $(BIN).o
+all: $(BINS)
 
-.SUFFIXES: .cpp .h
+clean:
+	rm -f *.o *~ $(BINS)
 
-.cpp.o:
-	$(CCOMP) $(CFLAGS) -c $*.cpp
-
-clean :
-	rm -f *.o *~ $(BIN)
+$(BINS): %: %.cpp
+	$(CCOMP) $(CFLAGS) -o $@ $<
 
 # dependencies
-$(BIN).o : TurbGen.h
+$(BINS).o: TurbGen.h
