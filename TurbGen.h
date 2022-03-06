@@ -57,7 +57,7 @@ class TurbGen
 {
     private:
         enum {X, Y, Z};
-        bool verbose; // extra output for debugging
+        int verbose; // shell output level (0: no output, 1: standard output, 2: more output)
         std::string ClassSignature; // class signature
         std::string parameter_file; // parameter file for controlling turbulence driving
         std::vector<double> mode[3], aka[3], akb[3], OUphases, ampl; // modes arrays, phases, amplitudes
@@ -82,33 +82,31 @@ class TurbGen
     /// Constructors
     public: TurbGen(void)
     {
-        Constructor(0, false);
+        Constructor(0); // default non-MPI program constructor
     };
-    public: TurbGen(const int PE, const bool verbose)
+    public: TurbGen(const int PE) // MPI-programs should supply MPI rank in PE
     {
-        Constructor(PE, verbose);
-    };
-    public: TurbGen(const int PE)
-    {
-        Constructor(PE, false);
-    };
-    public: TurbGen(const bool verbose)
-    {
-        Constructor(0, verbose);
+        Constructor(PE);
     };
     /// Destructor
     public: ~TurbGen()
     {
-      if (verbose) std::cout<<ClassSignature<<"destructor called."<<std::endl;
+      if (verbose > 1) std::cout<<ClassSignature<<"destructor called."<<std::endl;
     };
     // General constructur
-    private: void Constructor(const int PE, const bool verbose)
+    private: void Constructor(const int PE)
     {
         ClassSignature = "TurbGen: ";
-        this->verbose = verbose;
         this->PE = PE;
+        verbose = 1; // default verbose level
     };
 
+    // ******************************************************
+    // set functions
+    // ******************************************************
+    public: void set_verbose(const int verbose) {
+        this->verbose = verbose;
+    };
     // ******************************************************
     // get functions
     // ******************************************************
@@ -143,7 +141,7 @@ class TurbGen
         this->random_seed = random_seed; // set random seed for this realisation
         seed = this->random_seed; // set random seed for this realisation
         OUvar = 1.0; // Ornstein-Uhlenbeck variance (the returned turbulent field needs to be re-normalised outside this call, so we just set this to 1)
-        TurbGen_printf("===============================================================================\n");
+        if (verbose > 0) TurbGen_printf("===============================================================================\n");
         // this makes the rms of the turbulent field independent of the solenoidal weight (see Eq. 9 in Federrath et al. 2010)
         sol_weight_norm = sqrt(3.0/ndim)*sqrt(3.0)*1.0/sqrt(1.0-2.0*sol_weight+ndim*pow(sol_weight,2.0));
         // initialise modes
@@ -153,8 +151,8 @@ class TurbGen
         // calculate solenoidal and compressive coefficients (aka, akb) from OUphases
         get_decomposition_coeffs();
         // print info
-        print_info("single_realisation");
-        TurbGen_printf("===============================================================================\n");
+        if (verbose > 0) print_info("single_realisation");
+        if (verbose > 0) TurbGen_printf("===============================================================================\n");
         return 0;
     }; // init_single_realisation
 
@@ -170,7 +168,7 @@ class TurbGen
         // check if parameter file is present
         FILE * fp = fopen(parameter_file.c_str(), "r");
         if (fp == NULL) {
-            printf("TurbGen: ERROR: cannot access parameter file '%s'.\n", parameter_file.c_str()); exit(-1); 
+            if (verbose > 0) printf("TurbGen: ERROR: cannot access parameter file '%s'.\n", parameter_file.c_str()); exit(-1);
         } else {
             fclose(fp);
         }
@@ -205,7 +203,7 @@ class TurbGen
         step = -1;                                      // set internal OU step to -1 for start-up
         seed = random_seed;                             // copy original seed into local seed;
                                                         // local seeds gets updated everytime the random number generator is called
-        TurbGen_printf("===============================================================================\n");
+        if (verbose > 0) TurbGen_printf("===============================================================================\n");
         // this makes the rms of the turbulent field independent of the solenoidal weight (see Eq. 9 in Federrath et al. 2010)
         sol_weight_norm = sqrt(3.0/ndim)*sqrt(3.0)*1.0/sqrt(1.0-2.0*sol_weight+ndim*pow(sol_weight,2.0));
         // initialise modes
@@ -215,8 +213,8 @@ class TurbGen
         // calculate solenoidal and compressive coefficients (aka, akb) from OUphases
         get_decomposition_coeffs();
         // print info
-        print_info("driving");
-        TurbGen_printf("===============================================================================\n");
+        if (verbose > 0) print_info("driving");
+        if (verbose > 0) TurbGen_printf("===============================================================================\n");
         return 0;
     }; // init_driving
 
@@ -229,60 +227,71 @@ class TurbGen
         // and update the decomposition coefficients; otherwise, simply return.
         // ******************************************************
         int step_requested = floor(time / dt); // requested OU step number based on input 'time'
-        if (verbose) TurbGen_printf("step_requested = %i\n", step_requested);
+        if (verbose > 1) TurbGen_printf("step_requested = %i\n", step_requested);
         if (step_requested <= step) {
-            if (verbose) TurbGen_printf("no update of pattern...returning.\n");
+            if (verbose > 1) TurbGen_printf("no update of pattern...returning.\n");
             return false; // no update (yet) -> return false, i.e., no change of driving pattern
         }
         // if we are here: update OU vector
         for (int is = step; is < step_requested; is++) {
             OU_noise_update(); // this seeks to the requested OU state (updates OUphases)
-            if (verbose) TurbGen_printf("step = %i, time = %f\n", step, step*dt);
+            if (verbose > 1) TurbGen_printf("step = %i, time = %f\n", step, step*dt);
         }
         get_decomposition_coeffs(); // calculate solenoidal and compressive coefficients (aka, akb) from OUphases
         double time_gen = step * dt;
-        TurbGen_printf("Generated new turbulence driving pattern: #%6i, time = %e, time/t_turb = %-7.2f\n", step, time_gen, time_gen/t_decay);
+        if (verbose > 0) TurbGen_printf("Generated new turbulence driving pattern: #%6i, time = %e, time/t_turb = %-7.2f\n", step, time_gen, time_gen/t_decay);
         return true; // we just updated the driving pattern
     }; // check_for_update
 
 
     // ******************************************************
-    public: void get_turb_vector_unigrid(const double pos_beg[3], const double pos_end[3], const int n[3], float * return_grid[3]) {
+    public: void get_turb_vector_unigrid(const double pos_beg[], const double pos_end[], const int n[], float * return_grid[]) {
         // ******************************************************
-        // Compute 3D physical turbulent vector field on a 3D uniform grid,
-        // provided start coordinate pos_beg[3] and end coordinate pos_end[3]
-        // of the grid in (x,y,x) and number of points in grid n[3].
-        // Return into turbulent vector field into float * return_grid[3].
+        // Compute physical turbulent vector field on a uniform grid, provided
+        // start coordinate pos_beg[ndim] and end coordinate pos_end[ndim]
+        // of the grid and number of points in grid n[ndim].
+        // Return into turbulent vector field into float * return_grid[ndim].
         // Note that index in return_grid[X][index] is looped with x (index i)
         // as the inner loop and with z (index k) as the outer loop.
         // ******************************************************
-        if (verbose) TurbGen_printf("pos_beg = %f %f %f, pos_end = %f %f %f, n = %i %i %i\n",
+        if (verbose > 1) TurbGen_printf("pos_beg = %f %f %f, pos_end = %f %f %f, n = %i %i %i\n",
                 pos_beg[X], pos_beg[Y], pos_beg[Z], pos_end[X], pos_end[Y], pos_end[Z], n[X], n[Y], n[Z]);
-        // containers for speeding-up calculations below
+
+        // compute output grid cell width (dx, dy, dz)
+        double del[3] = {1.0, 1.0, 1.0};
+        for (int d = 0; d < ndim; d++) del[d] = (pos_end[d] - pos_beg[d]) / (n[d]-1);
+        // pre-compute amplitude including normalisation factors
         std::vector<double> ampl(n_modes);
+        for (int m = 0; m < n_modes; m++) ampl[m] = 2.0 * sol_weight_norm * this->ampl[m];
+        // pre-compute grid position geometry, and trigonometry, to speed-up loops over modes below
         std::vector< std::vector<double> > sinxi(n[X], std::vector<double>(n_modes));
         std::vector< std::vector<double> > cosxi(n[X], std::vector<double>(n_modes));
         std::vector< std::vector<double> > sinyj(n[Y], std::vector<double>(n_modes));
         std::vector< std::vector<double> > cosyj(n[Y], std::vector<double>(n_modes));
         std::vector< std::vector<double> > sinzk(n[Z], std::vector<double>(n_modes));
         std::vector< std::vector<double> > coszk(n[Z], std::vector<double>(n_modes));
-        // compute dx, dy, dz
-        double d[3];
-        for (int dim = 0; dim < 3; dim++) d[dim] = (pos_end[dim] - pos_beg[dim]) / (n[dim]-1);
-        // pre-compute grid position geometry, and trigonometry, for quicker access in loop over modes below
-        for (int m = 0; m < n_modes; m++) { // loop over modes
-            ampl[m] = 2.0 * sol_weight_norm * this->ampl[m]; // pre-compute amplitude including normalisation factors
+        for (int m = 0; m < n_modes; m++) {
             for (int i = 0; i < n[X]; i++) {
-                sinxi[i][m] = sin(mode[X][m]*(pos_beg[X]+i*d[X]));
-                cosxi[i][m] = cos(mode[X][m]*(pos_beg[X]+i*d[X]));
+                sinxi[i][m] = sin(mode[X][m]*(pos_beg[X]+i*del[X]));
+                cosxi[i][m] = cos(mode[X][m]*(pos_beg[X]+i*del[X]));
             }
             for (int j = 0; j < n[Y]; j++) {
-                sinyj[j][m] = sin(mode[Y][m]*(pos_beg[Y]+j*d[Y]));
-                cosyj[j][m] = cos(mode[Y][m]*(pos_beg[Y]+j*d[Y]));
+                if (ndim > 1) {
+                    sinyj[j][m] = sin(mode[Y][m]*(pos_beg[Y]+j*del[Y]));
+                    cosyj[j][m] = cos(mode[Y][m]*(pos_beg[Y]+j*del[Y]));
+                } else {
+                    sinyj[j][m] = 0.0;
+                    cosyj[j][m] = 1.0;
+                }
             }
             for (int k = 0; k < n[Z]; k++) {
-                sinzk[k][m] = sin(mode[Z][m]*(pos_beg[Z]+k*d[Z]));
-                coszk[k][m] = cos(mode[Z][m]*(pos_beg[Z]+k*d[Z]));
+                if (ndim > 2) {
+                    sinzk[k][m] = sin(mode[Z][m]*(pos_beg[Z]+k*del[Z]));
+                    coszk[k][m] = cos(mode[Z][m]*(pos_beg[Z]+k*del[Z]));
+                } else {
+                    sinzk[k][m] = 0.0;
+                    coszk[k][m] = 1.0;
+                }
             }
         }
         // scratch variables
@@ -304,25 +313,27 @@ class TurbGen
                                 ( cosyj[j][m]*coszk[k][m] - sinyj[j][m]*sinzk[k][m] ) * sinxi[i][m];
                         // accumulate total v as sum over modes
                         v[X] += ampl[m] * (aka[X][m]*real - akb[X][m]*imag);
-                        v[Y] += ampl[m] * (aka[Y][m]*real - akb[Y][m]*imag);
-                        v[Z] += ampl[m] * (aka[Z][m]*real - akb[Z][m]*imag);
+                        if (ndim > 1) v[Y] += ampl[m] * (aka[Y][m]*real - akb[Y][m]*imag);
+                        if (ndim > 2) v[Z] += ampl[m] * (aka[Z][m]*real - akb[Z][m]*imag);
+
                     }
                     // copy into return grid
                     long index = k*n[X]*n[Y] + j*n[X] + i;
                     return_grid[X][index] = v[X];
-                    return_grid[Y][index] = v[Y];
-                    return_grid[Z][index] = v[Z];
+                    if (ndim > 1) return_grid[Y][index] = v[Y];
+                    if (ndim > 2) return_grid[Z][index] = v[Z];
                 } // i
             } // j
         } // k
+
     } // get_turb_vector_unigrid
 
 
     // ******************************************************
-    public: void get_turb_vector(const double pos[3], double v[3]) {
+    public: void get_turb_vector(const double pos[], double v[]) {
         // ******************************************************
-        // Compute physical turbulent vector v[3]=(vx,vy,vz) at position pos[3]=(x,y,z)
-        // from loop over all turbulent modes; return into double v[3]
+        // Compute physical turbulent vector v[ndim]=(vx,vy,vz) at position pos[ndim]=(x,y,z)
+        // from loop over all turbulent modes; return into double v[ndim]
         // ******************************************************
         // containers for speeding-up calculations below
         std::vector<double> ampl(n_modes);
@@ -334,15 +345,25 @@ class TurbGen
             ampl[m] = 2.0 * sol_weight_norm * this->ampl[m]; // pre-compute amplitude including normalisation factors
             sinx[m] = sin(mode[X][m]*pos[X]);
             cosx[m] = cos(mode[X][m]*pos[X]);
-            siny[m] = sin(mode[Y][m]*pos[Y]);
-            cosy[m] = cos(mode[Y][m]*pos[Y]);
-            sinz[m] = sin(mode[Z][m]*pos[Z]);
-            cosz[m] = cos(mode[Z][m]*pos[Z]);
+            if (ndim > 1) {
+                siny[m] = sin(mode[Y][m]*pos[Y]);
+                cosy[m] = cos(mode[Y][m]*pos[Y]);
+            } else {
+                siny[m] = 0.0;
+                cosy[m] = 1.0;
+            }
+            if (ndim > 2) {
+                sinz[m] = sin(mode[Z][m]*pos[Z]);
+                cosz[m] = cos(mode[Z][m]*pos[Z]);
+            } else {
+                sinz[m] = 0.0;
+                cosz[m] = 1.0;
+            }
         }
         // scratch variables
         double real, imag;
         // init return vector with zero
-        v[X] = 0.0; v[Y] = 0.0; v[Z] = 0.0;
+        v[X] = 0.0; if (ndim > 1) v[Y] = 0.0; if (ndim > 2) v[Z] = 0.0;
         // loop over modes
         for (int m = 0; m < n_modes; m++) {
             // these are the real and imaginary parts, respectively, of
@@ -351,8 +372,8 @@ class TurbGen
             imag = cosx[m] * ( cosy[m]*sinz[m] + siny[m]*cosz[m] ) + sinx[m] * ( cosy[m]*cosz[m] - siny[m]*sinz[m] );
             // return vector for this position x, y, z
             v[X] += ampl[m] * (aka[X][m]*real - akb[X][m]*imag);
-            v[Y] += ampl[m] * (aka[Y][m]*real - akb[Y][m]*imag);
-            v[Z] += ampl[m] * (aka[Z][m]*real - akb[Z][m]*imag);
+            if (ndim > 1) v[Y] += ampl[m] * (aka[Y][m]*real - akb[Y][m]*imag);
+            if (ndim > 2) v[Z] += ampl[m] * (aka[Z][m]*real - akb[Z][m]*imag);
         }
     }; // get_turb_vector
 
@@ -402,13 +423,13 @@ class TurbGen
         ssize_t read;
         fp = fopen(parameter_file.c_str(), "r");
         std::string msg = ClassSignature+"ERROR: could not open parameter file '%s'\n";
-        if (fp == NULL) { printf(msg.c_str(), parameter_file.c_str()); exit(-1); }
+        if (fp == NULL) { if (verbose > 0) printf(msg.c_str(), parameter_file.c_str()); exit(-1); }
         bool found = false;
         while ((read = getline(&line, &len, fp)) != -1) {
             if (strncmp(line, search.c_str(), strlen(search.c_str())) == 0) {
-                if (verbose) TurbGen_printf("line = '%s'\n", line);
+                if (verbose > 1) TurbGen_printf("line = '%s'\n", line);
                 char * substr1 = strstr(line, "="); // extract everything after (and including) '='
-                if (verbose) TurbGen_printf("substr1 = '%s'\n", substr1);
+                if (verbose > 1) TurbGen_printf("substr1 = '%s'\n", substr1);
                 char * substr2 = strstr(substr1, "!"); // deal with comment '! ...'
                 char * substr3 = strstr(substr1, "#"); // deal with comment '# ...'
                 int end_index = strlen(substr1);
@@ -420,7 +441,7 @@ class TurbGen
                 }
                 char dest[100]; memset(dest, '\0', sizeof(dest));
                 strncpy(dest, substr1+1, end_index-1);
-                if (verbose) TurbGen_printf("dest = '%s'\n", dest);
+                if (verbose > 1) TurbGen_printf("dest = '%s'\n", dest);
                 if (type == 'i') *(int*)(ret) = atoi(dest);
                 if (type == 'd') *(double*)(ret) = atof(dest);
                 found = true;
@@ -431,7 +452,7 @@ class TurbGen
         if (line) free(line);
         if (found) return 0; else {
             std::string msg = ClassSignature+"ERROR: requested parameter '%s' not found in file '%s'\n";
-            printf(msg.c_str(), search.c_str(), parameter_file.c_str());
+            if (verbose > 0) printf(msg.c_str(), search.c_str(), parameter_file.c_str());
             exit(-1);
         }
     }; // read_from_parameter_file
@@ -488,11 +509,11 @@ class TurbGen
         tot_n_modes = n_modes;
         if (spect_form != 2) { // for Band (spect_form=0) and Parabola (spect_form=1)
             if (tot_n_modes > NameSpaceTurbGen::tgd_max_n_modes) {
-                TurbGen_printf(" n_modes = %i, maxmodes = %i", n_modes, NameSpaceTurbGen::tgd_max_n_modes);
-                TurbGen_printf("Too many stirring modes");
+                if (verbose > 0) TurbGen_printf(" n_modes = %i, maxmodes = %i", n_modes, NameSpaceTurbGen::tgd_max_n_modes);
+                if (verbose > 0) TurbGen_printf("Too many stirring modes");
                 exit(-1);
             }
-            TurbGen_printf("Generating %i turbulent modes...\n", tot_n_modes);
+            if (verbose > 0) TurbGen_printf("Generating %i turbulent modes...\n", tot_n_modes);
         }
 
         n_modes = 0; // reset
@@ -522,15 +543,15 @@ class TurbGen
                             n_modes++;
                             ampl.push_back(amplitude);
                             mode[X].push_back(k[X]);
-                            mode[Y].push_back(k[Y]);
-                            mode[Z].push_back(k[Z]);
+                            if (ndim > 1) mode[Y].push_back(k[Y]);
+                            if (ndim > 2) mode[Z].push_back(k[Z]);
 
                             if (ndim > 1) {
                                 n_modes++;
                                 ampl.push_back(amplitude);
                                 mode[X].push_back( k[X]);
                                 mode[Y].push_back(-k[Y]);
-                                mode[Z].push_back( k[Z]);
+                                if (ndim > 2) mode[Z].push_back( k[Z]);
                             }
 
                             if (ndim > 2) {
@@ -546,7 +567,7 @@ class TurbGen
                                 mode[Z].push_back(-k[Z]);
                             }
 
-                            if ((n_modes) % 1000 == 0) TurbGen_printf(" ... %i of total %i modes generated...\n", n_modes, tot_n_modes);
+                            if ((n_modes) % 1000 == 0) if (verbose > 0) TurbGen_printf(" ... %i of total %i modes generated...\n", n_modes, tot_n_modes);
 
                         } // in k range
                     } // ikz
@@ -559,8 +580,8 @@ class TurbGen
         // === with the number of angles growing ~ k^angles_exp
         if (spect_form == 2) {
 
-            TurbGen_printf("There would be %i turbulent modes, if k-space were fully sampled (angles_exp = 2.0)...\n", tot_n_modes);
-            TurbGen_printf("Here we are using angles_exp = %f\n", angles_exp);
+            if (verbose > 0) TurbGen_printf("There would be %i turbulent modes, if k-space were fully sampled (angles_exp = 2.0)...\n", tot_n_modes);
+            if (verbose > 0) TurbGen_printf("Here we are using angles_exp = %f\n", angles_exp);
 
             // initialize additional random numbers (uniformly distributed) to randomise angles
             int seed_init = -seed; // initialise Numerical Recipes rand gen (call with negative integer)
@@ -570,12 +591,12 @@ class TurbGen
             ikmin[0] = std::max(1, (int)round(stir_min*L[X]/(2*M_PI)));
             ikmax[0] =             (int)round(stir_max*L[X]/(2*M_PI));
 
-            TurbGen_printf("Generating turbulent modes within k = [%i, %i]\n", ikmin[0], ikmax[0]);
+            if (verbose > 0) TurbGen_printf("Generating turbulent modes within k = [%i, %i]\n", ikmin[0], ikmax[0]);
 
             for (ik[0] = ikmin[0]; ik[0] <= ikmax[0]; ik[0]++) {
 
                 nang = pow(2.0,ndim) * ceil(pow((double)ik[0],angles_exp));
-                TurbGen_printf("ik, number of angles = %i, %i\n", ik[0], nang);
+                if (verbose > 0) TurbGen_printf("ik, number of angles = %i, %i\n", ik[0], nang);
 
                 for (iang = 1; iang <= nang; iang++) {
 
@@ -587,7 +608,7 @@ class TurbGen
                     theta = M_PI/2.0;
                     if (ndim > 2) theta = acos(1.0 - 2.0*ran2(&seed)); // theta = [0,pi] sample the whole sphere
 
-                    if (verbose) TurbGen_printf("entering: theta = %f, phi = %f\n", theta, phi);
+                    if (verbose > 1) TurbGen_printf("entering: theta = %f, phi = %f\n", theta, phi);
 
                     rand = ik[0] + ran2(&seed) - 0.5;
                     k[X] = 2*M_PI * round(rand*sin(theta)*cos(phi)) / L[X];
@@ -605,8 +626,8 @@ class TurbGen
                     if ((ka >= stir_min) && (ka <= stir_max)) {
 
                         if (n_modes > NameSpaceTurbGen::tgd_max_n_modes) {
-                            TurbGen_printf(" n_modes = %i, maxmodes = %i", n_modes, NameSpaceTurbGen::tgd_max_n_modes);
-                            TurbGen_printf("Too many stirring modes");
+                            if (verbose > 0) TurbGen_printf(" n_modes = %i, maxmodes = %i", n_modes, NameSpaceTurbGen::tgd_max_n_modes);
+                            if (verbose > 0) TurbGen_printf("Too many stirring modes");
                             exit(-1);
                         }
 
@@ -619,10 +640,10 @@ class TurbGen
                         n_modes++;
                         ampl.push_back(amplitude);
                         mode[X].push_back(k[X]);
-                        mode[Y].push_back(k[Y]);
-                        mode[Z].push_back(k[Z]);
+                        if (ndim > 1) mode[Y].push_back(k[Y]);
+                        if (ndim > 2) mode[Z].push_back(k[Z]);
 
-                        if ((n_modes) % 1000 == 0) TurbGen_printf(" ... %i modes generated...\n", n_modes);
+                        if ((n_modes) % 1000 == 0) if (verbose > 0) TurbGen_printf(" ... %i modes generated...\n", n_modes);
 
                     } // in k range
 
@@ -639,8 +660,8 @@ class TurbGen
         // ******************************************************
         // initialize pseudo random sequence for the Ornstein-Uhlenbeck (OU) process
         // ******************************************************
-        OUphases.resize(6*n_modes);
-        for (int i = 0; i < 6*n_modes; i++) OUphases[i] = OUvar * get_random_number();
+        OUphases.resize(n_modes*ndim*2);
+        for (int i = 0; i < n_modes*ndim*2; i++) OUphases[i] = OUvar * get_random_number();
     }; // OU_noise_init
 
 
@@ -675,7 +696,7 @@ class TurbGen
         //
         // ******************************************************
         const double damping_factor = exp(-dt/t_decay);
-        for (int i = 0; i < 6*n_modes; i++) {
+        for (int i = 0; i < n_modes*ndim*2; i++) {
             OUphases[i] = OUphases[i] * damping_factor + 
                         sqrt(1.0 - damping_factor*damping_factor) * OUvar * get_random_number();
         }
@@ -689,7 +710,8 @@ class TurbGen
         // This routine applies the projection operator based on the OU phases.
         // See Eq. (6) in Federrath et al. (2010).
         // ******************************************************
-        for (int d = 0; d < ndim; d++) {
+        // resize aka and akb
+        for (int d = 0; d < 3; d++) {
             aka[d].resize(n_modes);
             akb[d].resize(n_modes);
         }
@@ -700,14 +722,14 @@ class TurbGen
             kk = 0.0;
             for (int d = 0; d < ndim; d++) {
                 kk = kk + mode[d][m]*mode[d][m];
-                ka = ka + mode[d][m]*OUphases[6*m+2*d+1];
-                kb = kb + mode[d][m]*OUphases[6*m+2*d+0];
+                ka = ka + mode[d][m]*OUphases[2*ndim*m+2*d+1];
+                kb = kb + mode[d][m]*OUphases[2*ndim*m+2*d+0];
             }
             for (int d = 0; d < ndim; d++) {
                 diva  = mode[d][m]*ka/kk;
                 divb  = mode[d][m]*kb/kk;
-                curla = OUphases[6*m+2*d+0] - divb;
-                curlb = OUphases[6*m+2*d+1] - diva;
+                curla = OUphases[2*ndim*m+2*d+0] - divb;
+                curlb = OUphases[2*ndim*m+2*d+1] - diva;
                 aka[d][m] = sol_weight*curla+(1.0-sol_weight)*divb;
                 akb[d][m] = sol_weight*curlb+(1.0-sol_weight)*diva;
                 // purely compressive
@@ -716,11 +738,11 @@ class TurbGen
                 // purely solenoidal
                 // aka[d][m] = R - mode[d][m]*kb/kk;
                 // akb[d][m] = I - mode[d][m]*ka/kk;
-                if (verbose) {
+                if (verbose > 1) {
                     TurbGen_printf("mode(dim=%1i, mode=%3i) = %12.6f\n", d, m, mode[d][m]);
                     TurbGen_printf("aka (dim=%1i, mode=%3i) = %12.6f\n", d, m, aka [d][m]);
                     TurbGen_printf("akb (dim=%1i, mode=%3i) = %12.6f\n", d, m, akb [d][m]);
-                    TurbGen_printf("ampl(dim=%1i, mode=%3i) = %12.6f\n", d, m, ampl   [m]);
+                    TurbGen_printf("ampl(mode=%3i) = %12.6f\n", d, m, ampl[m]);
                 }
             }
         }
