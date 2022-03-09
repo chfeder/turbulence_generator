@@ -433,7 +433,7 @@ void HelpMe(void)
         << "     -sol_weight <val>      : solenoidal weight: 1.0 (divergence-free field), 0.5 (natural mix), 0.0 (curl-free field); (default 0.5)" << endl
         << "     -random_seed <val>     : random seed for turbulent field; (default 140281)" << endl
         << "     -verbose <0, 1, 2>     : 0 (no shell output), 1 (standard shell output), 2 (more shell output); (default 1)" << endl
-        << "     -o                     : output filename (for HDF5 output); (default 'TurbGen_output.h5')" << endl
+        << "     -o <filename>          : output filename (for HDF5 output); (default 'TurbGen_output.h5')" << endl
         << "     -h                     : print this help message" << endl
         << endl
         << "Example: TurbGen -ndim 2 -L 1.0 1.0"
