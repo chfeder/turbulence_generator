@@ -33,4 +33,4 @@ $(BINS): %: %.cpp
 	$(CCOMP) $(CFLAGS) -o $@ $<
 
 # dependencies
-$(BINS).o: TurbGen.h
+$(BINS).o: TurbGen.h HDFIO.h
