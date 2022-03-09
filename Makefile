@@ -15,8 +15,11 @@ CCOMP = mpicxx
 CFLAGS = -O3
 HDF5_PATH = /opt/local
 
+ifeq ($(strip $(HAVE_MPI)), yes)
+CFLAGS += -DHAVE_MPI
+endif
 ifeq ($(strip $(HAVE_HDF5)), yes)
-CFLAGS += -DHAVE_MPI -DHAVE_HDF5 -I$(HDF5_PATH)/include -L$(HDF5_PATH)/lib -lhdf5
+CFLAGS += -DHAVE_HDF5 -I$(HDF5_PATH)/include -L$(HDF5_PATH)/lib -lhdf5
 endif
 
 BINS = TurbGen TurbGenDemo
