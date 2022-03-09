@@ -5,16 +5,33 @@
 
 #include <string>
 #include <iostream>
+#include <iomanip>
 #include <sstream>
 #include <stdio.h>
 #include <stdlib.h>
 #include "TurbGen.h"
 
+// normally set via compiler defines: #define HAVE_HDF5
+#ifdef HAVE_HDF5
+#include "HDFIO.h"
+#endif
+
+// normally set via compiler defines: #define HAVE_MPI
+#ifdef HAVE_MPI
+#include "mpi.h"
+#define MPI_COMM MPI_COMM_WORLD
+#else
+#ifndef MPI_COMM_NULL
+#define MPI_COMM_NULL 0
+#endif
+#define MPI_COMM MPI_COMM_NULL
+#endif
+
 using namespace std;
 
 // global variables
 enum {X, Y, Z};
-static const string ProgSign = "TurbGen: ";
+static const string ProgSign = "TurbGen.cpp: ";
 int verbose = 1; // 0: all standard output off (quiet mode)
 int ndim = 3; // dimensionality (must be 1 or 2 or 3)
 int N[3] = {64, 64, 64}; // number of cells in turbulent output field in x, y, z
@@ -29,7 +46,10 @@ double angles_exp = 1.0; // if spect_form == 2: spectral sampling of angles;
                          // For full sampling, angles_exp = 2.0; for healpix-type sampling, angles_exp = 0.0.
 double sol_weight = 0.5; // solenoidal weight: 1.0: solenoidal driving, 0.0: compressive driving, 0.5: natural mixture
 int random_seed = 140281; // random seed for this turbulent realisation
+string outfilename = "TurbGen_output.h5"; // HDF5 output filename
 
+// MPI stuff
+int MyPE = 0, NPE = 1;
 
 // forward functions
 int ParseInputs(const vector<string> Argument);
@@ -38,23 +58,46 @@ void HelpMe(void);
 
 int main(int argc, char * argv[])
 {
+    /// initialise MPI
+#ifdef HAVE_MPI
+    MPI_Init(&argc, &argv);
+    MPI_Comm_size(MPI_COMM_WORLD, &NPE);
+    MPI_Comm_rank(MPI_COMM_WORLD, &MyPE);
+#endif
+
     /// Parse inputs
     vector<string> Arguments(argc);
     for (int i = 0; i < argc; i++) Arguments[i] = static_cast<string>(argv[i]);
     if (ParseInputs(Arguments) == -1)
     {
-        if (verbose > 0) cout<<endl<<"Error in ParseInputs(). Exiting."<<endl;
+        if (MyPE==0 && verbose>0) cout<<endl<<ProgSign+"Error in ParseInputs(). Exiting."<<endl;
         HelpMe();
+#ifdef HAVE_MPI
+        MPI_Finalize();
+#endif
         return -1;
     }
 
-    if (verbose > 0) cout<<ProgSign+"started..."<<endl;
+    if (MyPE==0 && verbose>1) cout<<ProgSign+"started..."<<endl;
+
+#ifdef HAVE_MPI
+    // stop on error in domain decomposition if we run with MPI and number cores is > number of grid cells in X
+    if (NPE > N[X]) {
+        if (MyPE==0 && verbose>0) cout<<ProgSign+"Error in domain decomposition: NPE must be <= N[X]"<<endl;
+        MPI_Finalize();
+        return -1;
+    }
+#endif
 
     long starttime = time(NULL);
+    cout<<setprecision(9);
 
     // create TurbGen class object
-    TurbGen tg = TurbGen();
+    TurbGen tg = TurbGen(MyPE);
     tg.set_verbose(verbose);
+
+    // initialise generator to return a single turbulent realisation based on input parameters
+    tg.init_single_realisation(ndim, L, k_min, k_max, spect_form, power_law_exp, angles_exp, sol_weight, random_seed);
 
     // set dimensionality dependencies
     if (ndim < 3) { N[Z] = 1; L[Z] = 1.0; } // 2D
@@ -63,69 +106,176 @@ int main(int argc, char * argv[])
     // define cell size of uniform grid
     double del[3];
     for (int d = 0; d < 3; d++) del[d] = L[d] / N[d];
+
     // always generate within [0,L], cell-centered; user can shift output to target physical location, if needed
-    double pos_beg[3], pos_end[3]; // start and end coordinates of output grid
+    double pos_beg[3] = {0.0, 0.0, 0.0}, pos_end[3] = {0.0, 0.0, 0.0}; // start and end coordinates of output grid
+    // parallelise along X (generalises to non-MPI case, where NPE=1 and MyPE=0)
+    int divN_PE = ceil((double)N[X]/(double)NPE);
+    int NPE_main = N[X] / divN_PE;
+    int modN_PE = N[X] - NPE_main * divN_PE;
+    double divL_PE = L[X] * (double)divN_PE / (double)N[X];
+    double modL_PE = L[X] * (double)modN_PE / (double)N[X];
+    int NPE_in_use = NPE_main; if (modN_PE > 0) NPE_in_use += 1;
+    int NX = 0; // number of cells in X for MyPE (idle PEs get nothing, i.e., NX=0)
+    if (MyPE==0 && verbose>1)
+        cout<<ProgSign+"NPE_main, divN_PE, modN_PE, divL_PE, modL_PE = "<<NPE_main<<" "<<divN_PE<<" "<<modN_PE<<" "<<divL_PE<<" "<<modL_PE<<endl;
+    // set pos_beg and pos_end
     for (int d = 0; d < 3; d++) {
-        pos_beg[d] = del[d]/2.0; // first cell coordinate (cell center)
-        pos_end[d] = L[d] - del[d]/2.0; // last cell coordinate (cell center)
+        if (d==X) { // parallelised direction - x
+            if (MyPE < NPE_main) { // equally distribute to NPE_main cores
+                pos_beg[d] = MyPE*divL_PE + del[d]/2.0; // first cell coordinate (cell center)
+                pos_end[d] = (MyPE+1)*divL_PE - del[d]/2.0; // last cell coordinate (cell center)
+                NX = divN_PE;
+            } else if (MyPE < NPE_in_use) { // last PE gets the rest (idle PEs get nothing, i.e., NX=0)
+                pos_beg[d] = NPE_main*divL_PE + del[d]/2.0; // first cell coordinate (cell center)
+                pos_end[d] = L[X] - del[d]/2.0; // last cell coordinate (cell center)
+                NX = modN_PE;
+            }
+            if (verbose>1)
+                cout<<ProgSign+"MyPE, pos_beg[X], pos_beg[X], NX = "<<MyPE<<" "<<pos_beg[X]<<" "<<pos_end[X]<<" "<<NX<<endl;
+        } else { // non-parallelised direction(s)
+            pos_beg[d] = del[d]/2.0; // first cell coordinate (cell center)
+            pos_end[d] = L[d] - del[d]/2.0; // last cell coordinate (cell center)
+        }
     }
+
+#ifdef HAVE_MPI
+    if (MyPE==0 && verbose>0) {
+        cout<<ProgSign+"First "<<NPE_main<<" core(s) carry(ies) NX="<<divN_PE<<" cell(s) (each)."<<endl;
+        if (modN_PE > 0) cout<<ProgSign+"Core #"<<NPE_main+1<<" carries NX="<<modN_PE<<" cell(s)."<<endl;
+        if (NPE_in_use < NPE) cout<<ProgSign+"Warning: non-optimal load balancing; "<<NPE-NPE_in_use<<" core(s) remain(s) idle."<<endl;
+    }
+#endif
+
     // total number of output grid cells
-    long ntot = 1; for (int d = 0; d < 3; d++) ntot *= N[d];
+    int N_out[3] = {NX, N[Y], N[Z]};
+    long ntot = 1; for (int d = 0; d < 3; d++) ntot *= N_out[d];
     // output grid, which receives the turbulent field (up to ndim = 3)
     float * grid_out[3];
     // allocate
     for (int d = 0; d < ndim; d++) grid_out[d] = new float[ntot];
 
-    // initialise generator to return a single turbulent realisation based on input parameters
-    tg.init_single_realisation(ndim, L, k_min, k_max, spect_form, power_law_exp, angles_exp, sol_weight, random_seed);
-
     // call to return uniform grid(s) with ndim components of the turbulent field at requested positions
-    tg.get_turb_vector_unigrid(pos_beg, pos_end, N, grid_out);
+    tg.get_turb_vector_unigrid(pos_beg, pos_end, N_out, grid_out);
 
-    // indices in x,y,z, i.e., i,j,k, and 1D index
-    int i, j, k; long index;
-    i = 3; j = 0; k = 10;
-    index = k*N[Y]*N[X] + j*N[X] + i;
-    printf("e.g., x-component of turbulent vector field at index i,j,k = (%i %i %i) is %f\n", i,j,k, grid_out[0][index]);
-    i = 9; j = 1; k = 4;
-    index = k*N[Y]*N[X] + j*N[X] + i;
-    printf("e.g., z-component of turbulent vector field at index i,j,k = (%i %i %i) is %f\n", i,j,k, grid_out[2][index]);
-
-    // compute mean and RMS of generated turbulent field and then re-normalise to mean=0 and std=1
-    double mean[3] = {0.0, 0.0, 0.0};
-    double rms[3] = {0.0, 0.0, 0.0};
+    // compute mean and std of generated turbulent field and then re-normalise to mean=0 and std=1
+    double mean [3] = {0.0, 0.0, 0.0};
+    double mean2[3] = {0.0, 0.0, 0.0};
     double std[3] = {0.0, 0.0, 0.0};
     for (int d = 0; d < ndim; d++) {
         for (long ni = 0; ni < ntot; ni++) {
-            mean[d] += grid_out[d][ni];
-            rms [d] += pow(grid_out[d][ni],2.0);
+            mean [d] += grid_out[d][ni];
+            mean2[d] += pow(grid_out[d][ni],2.0);
         }
-        mean[d] /= ntot; // mean
-        rms[d] = sqrt(rms[d] / ntot); // root mean squared
-        std[d] = sqrt(rms[d]*rms[d] - mean[d]*mean[d]); // standard deviation
     }
-    // re-normalise to mean=0 and std=1
+#ifdef HAVE_MPI
+    MPI_Allreduce(MPI_IN_PLACE, mean , 3, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+    MPI_Allreduce(MPI_IN_PLACE, mean2, 3, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+#endif
     for (int d = 0; d < ndim; d++) {
+        mean [d] /= N[X]*N[Y]*N[Z]; // mean
+        mean2[d] /= N[X]*N[Y]*N[Z]; // mean squared
+        std[d] = sqrt(mean2[d] - mean[d]*mean[d]); // standard deviation
         for (long ni = 0; ni < ntot; ni++) {
             grid_out[d][ni] -= mean[d];
             grid_out[d][ni] /= std[d];
         }
     }
+
     // re-compute mean and std
     for (int d = 0; d < ndim; d++) {
-        mean[d] = 0.0; rms[d] = 0.0;
+        mean[d] = 0.0; mean2[d] = 0.0;
         for (long ni = 0; ni < ntot; ni++) {
-            mean[d] += grid_out[d][ni];
-            rms [d] += pow(grid_out[d][ni],2.0);
+            mean [d] += grid_out[d][ni];
+            mean2[d] += pow(grid_out[d][ni],2.0);
         }
-        mean[d] /= ntot; // mean
-        rms[d] = sqrt(rms[d] / ntot); // root mean squared
-        std[d] = sqrt(rms[d]*rms[d] - mean[d]*mean[d]); // standard deviation
     }
-    printf("Turbulent vector field mean (x,y,z) = (%e %e %e)\n", mean[0], mean[1], mean[2]);
-    printf("Turbulent vector field  rms (x,y,z) = (%e %e %e)\n",  rms[0],  rms[1],  rms[2]);
-    printf("Turbulent vector field  std (x,y,z) = (%e %e %e)\n",  std[0],  std[1],  std[2]);
-    printf("Turbulent vector field total 3D std = %e\n", sqrt(std[0]*std[0]+std[1]*std[1]+std[2]*std[2]));
+#ifdef HAVE_MPI
+    MPI_Allreduce(MPI_IN_PLACE, mean , 3, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+    MPI_Allreduce(MPI_IN_PLACE, mean2, 3, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+#endif
+    for (int d = 0; d < ndim; d++) {
+        mean [d] /= N[X]*N[Y]*N[Z]; // mean
+        mean2[d] /= N[X]*N[Y]*N[Z]; // mean squared
+        std[d] = sqrt(mean2[d] - mean[d]*mean[d]); // standard deviation
+    }
+
+    if (MyPE==0 && verbose>0) {
+        cout<<ProgSign+"Generated "<<ndim<<"D turbulent field with"<<endl;
+        cout<<ProgSign+" number of grid cells N ="; for (int d = 0; d < ndim; d++) cout<<" "<<N[d]; cout<<endl;
+        cout<<ProgSign+" physical size L ="; for (int d = 0; d < ndim; d++) cout<<" "<<L[d]; cout<<endl;
+        cout<<ProgSign+" mean ="; for (int d = 0; d < ndim; d++) cout<<" "<<mean[d]; cout<<endl;
+        cout<<ProgSign+" 1D standard deviation ="; for (int d = 0; d < ndim; d++) cout<<" "<<std[d]; cout<<endl;
+        string expected = "";
+        if (ndim==1) expected = "1";
+        if (ndim==2) expected = "sqrt(2)";
+        if (ndim==3) expected = "sqrt(3)";
+        cout<<ProgSign+" total ("<<ndim<<"D) standard deviation (expected: "<<expected<<") = "<<sqrt(std[0]*std[0]+std[1]*std[1]+std[2]*std[2])<<endl;
+    }
+
+#ifdef HAVE_HDF5
+    // write to HDF5 file
+    if (MyPE==0 && verbose>0) {
+        cout<<"-----------------------------------------------------"<<endl;
+        cout<<ProgSign+"Creating '"<<outfilename<<"' for output..."<<endl;
+    }
+    HDFIO hdfio = HDFIO();
+    hdfio.create(outfilename, MPI_COMM);
+    // write scalars
+    vector<int> hdf5dims(0);
+    hdfio.write(&ndim, "ndim", hdf5dims, H5T_NATIVE_INT, MPI_COMM);
+    hdfio.write(&k_min, "kmin", hdf5dims, H5T_NATIVE_DOUBLE, MPI_COMM);
+    hdfio.write(&k_max, "kmax", hdf5dims, H5T_NATIVE_DOUBLE, MPI_COMM);
+    hdfio.write(&spect_form, "spect_form", hdf5dims, H5T_NATIVE_INT, MPI_COMM);
+    if (spect_form == 2) {
+        hdfio.write(&power_law_exp, "power_law_exp", hdf5dims, H5T_NATIVE_DOUBLE, MPI_COMM);
+        hdfio.write(&angles_exp, "angles_exp", hdf5dims, H5T_NATIVE_DOUBLE, MPI_COMM);
+    }
+    hdfio.write(&sol_weight, "sol_weight", hdf5dims, H5T_NATIVE_DOUBLE, MPI_COMM);
+    hdfio.write(&random_seed, "random_seed", hdf5dims, H5T_NATIVE_INT, MPI_COMM);
+    // write N and L vectors
+    hdf5dims.resize(1); hdf5dims[0] = ndim;
+    int No[ndim]; double Lo[ndim]; // order Z,Y,X
+     for (int d = 0; d < ndim; d++) {
+        No[ndim-1-d] = N[d];
+        Lo[ndim-1-d] = L[d];
+    }
+    hdfio.write(No, "N", hdf5dims, H5T_NATIVE_INT, MPI_COMM);
+    hdfio.write(Lo, "L", hdf5dims, H5T_NATIVE_DOUBLE, MPI_COMM);
+    // write turbulent field (components)
+    hdf5dims.resize(ndim); for (int d = 0; d < ndim; d++) hdf5dims[ndim-1-d] = N[d]; // order Z,Y,X
+    if (MyPE==0 && verbose>1) { cout<<ProgSign+"hdf5dims ="; for (int d = 0; d < ndim; d++) cout<<" "<<hdf5dims[d]; cout<<endl; }
+    for (int dc = 0; dc < ndim; dc++) { // loop over component(s)
+        string dsetname = "turb_field";
+        if (dc == 0) dsetname += "_x";
+        if (dc == 1) dsetname += "_y";
+        if (dc == 2) dsetname += "_z";
+        hdfio.create_dataset(dsetname, hdf5dims, H5T_NATIVE_FLOAT, MPI_COMM); // create HDF5 dataset
+        // specify dimensions and offset for slab operation
+        hsize_t offset[ndim], count[ndim], out_offset[ndim], out_count[ndim];
+        for (int d = 0; d < ndim; d++) {
+            int dd = ndim-1-d; // order Z,Y,X
+            // collective HDF5 IO only works if inactive cores participate, but with counts=0 and offsets=0
+            offset[dd] = 0; count[dd] = 0; out_offset[dd] = 0; out_count[dd] = 0;
+            if (MyPE < NPE_in_use) {
+                if (d==0) offset[dd] = MyPE*divN_PE;
+                count[dd] = N_out[d];
+                out_offset[dd] = 0;
+                out_count[dd] = N_out[d];
+            }
+        }
+        if (verbose>1) {
+            for (int d = 0; d < ndim; d++)
+                cout<<"MyPE, d, offset, count, out_offset, out_count = "<<
+                        MyPE<<" "<<d<<" "<<offset[d]<<" "<<count[d]<<" "<<out_offset[d]<<" "<<out_count[d]<<endl;
+        }
+        // write slab to file (in parallel, if we have MPI)
+        hdfio.overwrite_slab(grid_out[dc], dsetname, H5T_NATIVE_FLOAT, offset, count, ndim, out_offset, out_count, MPI_COMM);
+        if (MyPE==0 && verbose>0) cout<<ProgSign+"Dataset '"<<dsetname<<"' in '"<<outfilename<<"' written."<<endl;
+    }
+    hdfio.close();
+    if (MyPE==0 && verbose>0) cout<<ProgSign+"Finished writing '"<<outfilename<<"'."<<endl;
+#endif
 
     // clean up
     for (int d = 0; d < ndim; d++) {
@@ -135,11 +285,20 @@ int main(int argc, char * argv[])
     /// print out wallclock time used
     long endtime = time(NULL);
     long duration = endtime-starttime;
-    if (verbose > 0) cout<<ProgSign+"Total runtime: "<<duration<<"s"<<endl;
+    if (verbose>1) cout<<ProgSign+"["<<MyPE<<"] Local runtime: "<<duration<<"s"<<endl;
+#ifdef HAVE_MPI
+    MPI_Allreduce(MPI_IN_PLACE, &duration, 1, MPI_LONG, MPI_MAX, MPI_COMM_WORLD);
+#endif
+    if (MyPE==0 && verbose>0) {
+        cout<<"-----------------------------------------------------"<<endl;
+        cout<<ProgSign+"Total runtime: "<<duration<<"s"<<endl;
+    }
 
-  return 0;
+#ifdef HAVE_MPI
+    MPI_Finalize();
+#endif
+    return 0;
 }
-
 
 
 /** ------------------------- ParseInputs ----------------------------
@@ -153,7 +312,7 @@ int ParseInputs(const vector<string> Argument)
     /// read tool specific options
     if (Argument.size() < 2)
     {
-        cout << endl << FuncSign+"Specify at least 1 argument." << endl;
+        if (MyPE==0) cout << endl << FuncSign+"Specify at least 1 argument." << endl;
         return -1;
     }
 
@@ -233,11 +392,16 @@ int ParseInputs(const vector<string> Argument)
                 dummystream << Argument[i+1]; dummystream >> random_seed; dummystream.clear();
             } else return -1;
         }
-
+        if (Argument[i] != "" && Argument[i] == "-o")
+        {
+            if (Argument.size()>i+1) {
+                dummystream << Argument[i+1]; dummystream >> outfilename; dummystream.clear();
+            } else return -1;
+        }
     } // loop over all args
 
     /// print out parsed values
-    if (verbose > 1) {
+    if (MyPE==0 && verbose>1) {
         cout << FuncSign+"Command line arguments: ";
         for (unsigned int i = 0; i < Argument.size(); i++) cout << Argument[i] << " ";
         cout << endl;
@@ -252,7 +416,7 @@ int ParseInputs(const vector<string> Argument)
  ** ------------------------------------------------------------------ */
 void HelpMe(void)
 {
-    if (verbose > 0) {
+    if (MyPE==0 && verbose>0) {
         cout << endl
         << ProgSign+"Generates a turbulent field of mean=0 and std=1, with specified parameters (see OPTIONS)." << endl << endl
         << "Syntax:" << endl
@@ -269,6 +433,7 @@ void HelpMe(void)
         << "     -sol_weight <val>      : solenoidal weight: 1.0 (divergence-free field), 0.5 (natural mix), 0.0 (curl-free field); (default 0.5)" << endl
         << "     -random_seed <val>     : random seed for turbulent field; (default 140281)" << endl
         << "     -verbose <0, 1, 2>     : 0 (no shell output), 1 (standard shell output), 2 (more shell output); (default 1)" << endl
+        << "     -o                     : output filename (for HDF5 output); (default 'TurbGen_output.h5')" << endl
         << "     -h                     : print this help message" << endl
         << endl
         << "Example: TurbGen -ndim 2 -L 1.0 1.0"
