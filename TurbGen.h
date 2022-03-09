@@ -259,7 +259,7 @@ class TurbGen
 
         // compute output grid cell width (dx, dy, dz)
         double del[3] = {1.0, 1.0, 1.0};
-        for (int d = 0; d < ndim; d++) del[d] = (pos_end[d] - pos_beg[d]) / (n[d]-1);
+        for (int d = 0; d < ndim; d++) if (n[d] > 1) del[d] = (pos_end[d] - pos_beg[d]) / (n[d]-1);
         // pre-compute amplitude including normalisation factors
         std::vector<double> ampl(n_modes);
         for (int m = 0; m < n_modes; m++) ampl[m] = 2.0 * sol_weight_norm * this->ampl[m];
