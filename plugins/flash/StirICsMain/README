@@ -1,6 +1,6 @@
 This is the collection of source code files used in the FLASH hydro code for generating initial turbulent velocity and magnetic fields.
 
-It uses the C++ implementation of TurbGen.h with Fortran (with an Fortran-to-C interface in st_stirics_turbulence_generator_interface.C) to construct a single realisation of a turbulent vector field.
+It uses the C++ implementation of TurbGen.h with Fortran (with a Fortran-to-C interface in st_stirics_turbulence_generator_interface.C) to construct a single realisation of a turbulent vector field.
 
 This code can be used as a template for other hydro codes. Short description of main files:
 
