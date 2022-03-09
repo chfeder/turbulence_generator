@@ -39,7 +39,7 @@ https://ui.adsabs.harvard.edu/abs/2010A%26A...512A..81F/abstract
  archivePrefix = {arXiv},<br/>
  eprint = {0905.1060},<br/>
  primaryClass = {astro-ph.SR},<br/>
- adsurl = {https://ui.adsabs.harvard.edu/abs/2010A&A...512A..81F},<br/>
+ adsurl = {https://ui.adsabs.harvard.edu/abs/2010A&A...512A..81F },<br/>
  adsnote = {Provided by the SAO/NASA Astrophysics Data System}<br/>
 }
 
