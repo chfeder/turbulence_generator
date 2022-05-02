@@ -26,16 +26,15 @@
 #define TURBULENCE_GENERATOR_H
 
 #include <iostream>
-#include <string>
 #include <vector>
 #include <algorithm>
-
-#include <stdio.h>
-#include <stdlib.h>
-#include <stdarg.h>
-#include <float.h>
-#include <string.h>
-#include <math.h>
+#include <string>
+#include <cstring>
+#include <cstdio>
+#include <cstdlib>
+#include <cstdarg>
+#include <cfloat>
+#include <cmath>
 
 namespace NameSpaceTurbGen {
     // constants
