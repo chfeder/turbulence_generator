@@ -2,12 +2,13 @@
 #define HDFIO_H
 
 #include <hdf5.h>
-#include <assert.h>
 #include <iostream>
 #include <vector>
-#include <string>
 #include <map>
 #include <algorithm>
+#include <string>
+#include <cstring>
+#include <cassert>
 
 // we use H5_HAVE_PARALLEL defined in hdf5.h to signal whether we have MPI support or not
 #ifdef H5_HAVE_PARALLEL
@@ -32,7 +33,7 @@ namespace NameSpaceHDFIO {
     template<> struct FlashScalarsParametersStruct<bool> { char name[flash_str_len]; bool value; };
     template<> struct FlashScalarsParametersStruct<std::string> { char name[flash_str_len]; char value[flash_str_len]; };
     // FLASHPropAssign template function; applies to string case (so we do a string-copy from string to c_str)
-    template<typename T, typename Td> void FLASHPropAssign(T val, Td * data) { std::strcpy(*data, val.c_str()); };
+    template<typename T, typename Td> void FLASHPropAssign(T val, Td * data) { strcpy(*data, val.c_str()); };
     // FLASHPropAssign template functions that apply to int, double, bool cases
     template<> void FLASHPropAssign<int>    (int    val, int    * data) { *data = val; }; // simply assign
     template<> void FLASHPropAssign<double> (double val, double * data) { *data = val; }; // simply assign
