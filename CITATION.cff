@@ -1,0 +1,31 @@
+# This CITATION.cff file was generated with cffinit.
+# Visit https://bit.ly/cffinit to generate yours today!
+
+cff-version: 1.2.0
+title: Turbulence Generator
+message: >-
+  This tool generates a time sequence of random
+  Fourier modes via an Ornstein-Uhlenbeck (OU)
+  process, used to drive turbulence in hydrodynamical
+  simulation codes. It can also generate single
+  turbulent realisations.
+type: software
+authors:
+  - given-names: Christoph
+    family-names: Federrath
+    email: christoph.federrath@anu.edu.au
+    affiliation: Australian National University
+    orcid: 'https://orcid.org/0000-0002-0706-2306'
+identifiers:
+  - type: doi
+    value: 10.1051/0004-6361/200912437
+  - type: url
+    value: >-
+      https://ui.adsabs.harvard.edu/abs/2010A%26A...512A..81F/abstract
+repository-code: 'https://github.com/chfeder/turbulence_generator'
+url: >-
+  https://ui.adsabs.harvard.edu/abs/2010A%26A...512A..81F/abstract
+keywords:
+  - Turbulence
+  - Fourier transformation
+  - Hydrodynamics
