@@ -721,7 +721,7 @@ class HDFIO
     {
         std::vector<std::string> dsets_in_file = getDatasetnames();
         bool dset_in_file = false; // see if the Datasetname exists in the file
-        for (int i = 0; i < dsets_in_file.size(); i++) {
+        for (unsigned int i = 0; i < dsets_in_file.size(); i++) {
             if (dsets_in_file[i] == Datasetname) { dset_in_file = true; break; }
         }
         if (dset_in_file) { // if the Datasetname is in the file, delete it
@@ -736,7 +736,7 @@ class HDFIO
     public: void delete_datasets(void)
     {
         std::vector<std::string> dsets_in_file = getDatasetnames();
-        for (int i = 0; i < dsets_in_file.size(); i++) {
+        for (unsigned int i = 0; i < dsets_in_file.size(); i++) {
             this->delete_dataset(dsets_in_file[i]);
         }
     };
