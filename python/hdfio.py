@@ -1,17 +1,12 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-# written by Christoph Federrath, 2019-2020
-
-from python_startup import *
+# written by Christoph Federrath, 2019-2022
 
 import os, sys
-#from shutil import move, copyfile
-#from os import system, remove, close, path
 import numpy as np
 import h5py
 from mytools import print, stop
 import argparse
-
 
 # ============= get_shape =============
 def get_shape(filename, datasetname):
@@ -48,12 +43,11 @@ def write(data, filename, datasetname, overwrite_file=False, overwrite_dataset=F
         if overwrite_dataset:
             del f[datasetname] # if we overwrite, then delete first
         else:
-            print("Error: dataset '"+datasetname+"' already in file '"+filename+"'. Use option 'overwrite_dataset=True' to overwrite.")
-            return
+            print("dataset '"+datasetname+"' already in file '"+filename+"'. Use option 'overwrite_dataset=True' to overwrite.", error=True)
     # create and write data
     dset = f.create_dataset(datasetname, data=data)
     f.close()
-    print("'"+datasetname+"' written in file '"+filename+"'")
+    print("'"+datasetname+"' written in file '"+filename+"'", highlight=3)
     return data
 # ============= end: write =============
 
@@ -63,7 +57,7 @@ def delete(filename, datasetname, quiet=False):
     f = h5py.File(filename, "a")
     # check if dataset name exists in hdf5 file
     if datasetname in f.keys():
-        if not quiet: print("Warning: deleting dataset '"+datasetname+"' in file '"+filename+"'.")
+        if not quiet: print("deleting dataset '"+datasetname+"' in file '"+filename+"'.", warn=True)
         del f[datasetname]
     f.close()
 # ============= end: delete =============
