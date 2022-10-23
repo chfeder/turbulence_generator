@@ -6,8 +6,8 @@ import sys
 import argparse
 import numpy as np
 import hdfio
-import mytools as mt
-from mytools import print, stop
+import cfpack as cfp
+from cfpack import print, stop
 
 
 # =========================================================
@@ -50,7 +50,7 @@ def generate(args, parser):
     if args.num_procs: args_mpirun = "mpirun -np "+str(args.num_procs)+" "
     cmd = args_mpirun+"./TurbGen"+arg_ndim+arg_N+arg_L+arg_kmin+arg_kmax+args_spect_form+args_power_law_exp+args_angles_exp
     cmd += args_sol_weight+args_random_seed+args_verbose+args_outputfile+args_write_modes
-    mt.run_shell_command(cmd) # run TurbGen
+    cfp.run_shell_command(cmd) # run TurbGen
 # =========================================================
 
 # === analyse turbulent field in HDF5 file ===
@@ -72,25 +72,25 @@ def analyse(args, parser):
     print("standard deviation = ", std, highlight=1)
     # PDF plot
     for d in range(ncmp):
-        pdf, q = mt.get_pdf(dat[d], bins=min(100,int(0.1*dat[d].size)))
-        mt.plot(x=q, y=pdf, label="$"+dirs[d]+"$")
-    mt.plot(xlabel='$q$', ylabel='PDF', ylog=True, save=args.inputfile+"_pdf.pdf")
+        pdf, q = cfp.get_pdf(dat[d], bins=min(100,int(0.1*dat[d].size)))
+        cfp.plot(x=q, y=pdf, label="$"+dirs[d]+"$")
+    cfp.plot(xlabel='$q$', ylabel='PDF', ylog=True, save=args.inputfile+"_pdf.pdf")
     # Fourier spectra power comparison
-    sp = mt.get_spectrum(dat, ncmp=ncmp)
+    sp = cfp.get_spectrum(dat, ncmp=ncmp)
     tot_power = sp["P_tot"].sum()/ncmp
-    print("total power = "+mt.eform(tot_power), highlight=2)
+    print("total power = "+cfp.eform(tot_power), highlight=2)
     if "P_lgt" in sp:
         lgt_power = sp["P_lgt"].sum()/ncmp
-        print("logitudinal power = "+mt.eform(lgt_power)+", relative to total: "+mt.round(100*lgt_power/tot_power,str_ret=True)+"%", highlight=2)
+        print("logitudinal power = "+cfp.eform(lgt_power)+", relative to total: "+cfp.round(100*lgt_power/tot_power,str_ret=True)+"%", highlight=2)
     if "P_trv" in sp:
         trv_power = sp["P_trv"].sum()/ncmp
-        print("transverse power  = "+mt.eform(trv_power)+", relative to total: "+mt.round(100*trv_power/tot_power,str_ret=True)+"%", highlight=2)
+        print("transverse power  = "+cfp.eform(trv_power)+", relative to total: "+cfp.round(100*trv_power/tot_power,str_ret=True)+"%", highlight=2)
     # Fourier spectra plot
     k = sp["k"]
     ind = (k > 0) & (sp["P_tot"] > 1e-15)
-    mt.plot(x=k[ind], y=sp["P_tot"][ind], label="total")
-    if "P_lgt" in sp: mt.plot(x=k[ind], y=sp["P_lgt"][ind], label="long")
-    if "P_trv" in sp: mt.plot(x=k[ind], y=sp["P_trv"][ind], label="trans")
+    cfp.plot(x=k[ind], y=sp["P_tot"][ind], label="total")
+    if "P_lgt" in sp: cfp.plot(x=k[ind], y=sp["P_lgt"][ind], label="long")
+    if "P_trv" in sp: cfp.plot(x=k[ind], y=sp["P_trv"][ind], label="trans")
     spect_form = int(hdfio.read(args.inputfile, 'spect_form'))
     if spect_form == 2: # power law
         power_law_exp = float(hdfio.read(args.inputfile, 'power_law_exp'))
@@ -98,8 +98,8 @@ def analyse(args, parser):
         kmax = float(hdfio.read(args.inputfile, 'kmax'))
         x = np.array([kmin,kmax])
         y = x**power_law_exp
-        mt.plot(x=x, y=y, label="power-law slope: "+str(power_law_exp), linestyle='dashed', color='black')
-    mt.plot(xlabel='$k$', ylabel='$P(k)$', xlim=[0.9,1.1*np.max(k)], xlog=True, ylog=True, legend_loc='upper right', save=args.inputfile+"_spectrum.pdf")
+        cfp.plot(x=x, y=y, label="power-law slope: "+str(power_law_exp), linestyle='dashed', color='black')
+    cfp.plot(xlabel='$k$', ylabel='$P(k)$', xlim=[0.9,1.1*np.max(k)], xlog=True, ylog=True, legend_loc='upper right', save=args.inputfile+"_spectrum.pdf")
 
 # =========================================================
 
