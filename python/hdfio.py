@@ -5,7 +5,7 @@
 import os, sys
 import numpy as np
 import h5py
-from mytools import print, stop
+from cfpack import print, stop
 import argparse
 
 # ============= get_shape =============
