@@ -829,7 +829,7 @@ class TurbGen
         *idum = IA*(*idum-k*IQ)-IR*k;
         if (*idum < 0) *idum = *idum+IM;
         int iy = *idum;
-        double ret = std::min(AM*iy, RNMX);
+        double ret = std::min(AM*iy, RNMX); // returns uniform random number in [0,1[
         return ret;
     }; // ran1s
 
