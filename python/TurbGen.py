@@ -5,10 +5,14 @@
 import sys
 import argparse
 import numpy as np
-import hdfio
 import cfpack as cfp
-from cfpack import print, stop
+from cfpack import hdfio, print, stop
 
+# =========================================================
+def Gaussian_func(x, mean, sigma):
+    ret = 1.0/np.sqrt(2.0*np.pi*sigma**2) * np.exp(-0.5*(x-mean)**2/sigma**2)
+    return ret
+# =========================================================
 
 # =========================================================
 def get_number_of_components(ndim):
@@ -74,6 +78,14 @@ def analyse(args, parser):
     for d in range(ncmp):
         pdf, q = cfp.get_pdf(dat[d], bins=min(100,int(0.1*dat[d].size)))
         cfp.plot(x=q, y=pdf, label="$"+dirs[d]+"$")
+        # fit and plot fit
+        print("fit for "+dirs[d]+" component:")
+        params = {"mean": [-1.0, 0.0, 1.0], "sigma": [1e-6, 1.0, 1e6]}
+        fit_result = cfp.fit(Gaussian_func, q, pdf, params=params)
+        xfit = np.linspace(q.min(),q.max(),num=500)
+        yfit = Gaussian_func(xfit, *fit_result.popt)
+        cfp.plot(x=xfit, y=yfit, label="$\mathrm{fit:}\:"+dirs[d]+"$")
+    # finally, plot everything
     cfp.plot(xlabel='$q$', ylabel='PDF', ylog=True, save=args.inputfile+"_pdf.pdf")
     # Fourier spectra power comparison
     sp = cfp.get_spectrum(dat, ncmp=ncmp)
