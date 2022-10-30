@@ -44,6 +44,9 @@ subroutine Stir_init(restart)
   call RuntimeParameters_get('st_infilename', st_infilename)
   call RuntimeParameters_get('st_computeDt', st_computeDt)
   call RuntimeParameters_get('st_stop_driving_time', st_stop_driving_time)
+  call RuntimeParameters_get('st_x_amplitude_factor', st_x_amplitude_factor)
+  call RuntimeParameters_get('st_y_amplitude_factor', st_y_amplitude_factor)
+  call RuntimeParameters_get('st_z_amplitude_factor', st_z_amplitude_factor)
 
   if (.not. st_useStir) then
     if (dr_globalMe .eq. MASTER_PE) &

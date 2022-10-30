@@ -23,5 +23,14 @@ PARAMETER st_computeDt   BOOLEAN   FALSE
 D         st_stop_driving_time   time at which to turn off driving
 PARAMETER st_stop_driving_time   REAL   1e38
 
+D         st_x_amplitude_factor   factor to adjust driving amplitude in x-direction
+PARAMETER st_x_amplitude_factor   REAL   1.0
+
+D         st_y_amplitude_factor   factor to adjust driving amplitude in y-direction
+PARAMETER st_y_amplitude_factor   REAL   1.0
+
+D         st_z_amplitude_factor   factor to adjust driving amplitude in z-direction
+PARAMETER st_z_amplitude_factor   REAL   1.0
+
 # this is to link the example parameter file into the object dir
 DATAFILES *.inp

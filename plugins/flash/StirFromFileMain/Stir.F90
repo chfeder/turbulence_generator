@@ -24,7 +24,7 @@
 !!    (2012: added a pre-proc statement to treat the acceleration field as a force for testing; not the default)
 !!    (2011/2012: added a write-out of the energy injection rate)
 !!    (2017: added dynamic allocation of st_nmodes arrays)
-!!    (2022: use of turbulence_generator c library/header)
+!!    (2022: use of turbulence_generator C++ library/header, TurbGen.h)
 !!
 !!***
 
@@ -156,6 +156,9 @@ subroutine Stir(blockCount, blockList, dt, pass)
       pos_end = blockCenter + 0.5*blockSize - del/2.0 ! last  active cell coordinate in block (x,y,z)
       ncells = blkLimits(HIGH,:)-blkLimits(LOW,:)+1 ! number of active cells in (x,y,z)
       call st_stir_get_turb_vector_unigrid_c(pos_beg, pos_end, ncells, accx, accy, accz)
+      accx = accx * st_x_amplitude_factor ! scale by st_x_amplitude_factor
+      accy = accy * st_y_amplitude_factor ! scale by st_y_amplitude_factor
+      accz = accz * st_z_amplitude_factor ! scale by st_z_amplitude_factor
     endif
 
     ! get a pointer to the current block of data
@@ -268,6 +271,9 @@ subroutine Stir(blockCount, blockList, dt, pass)
       pos_end = blockCenter + 0.5*blockSize - del/2.0 ! last  active cell coordinate in block (x,y,z)
       ncells = blkLimits(HIGH,:)-blkLimits(LOW,:)+1 ! number of active cells in (x,y,z)
       call st_stir_get_turb_vector_unigrid_c(pos_beg, pos_end, ncells, accx, accy, accz)
+      accx = accx * st_x_amplitude_factor ! scale by st_x_amplitude_factor
+      accy = accy * st_y_amplitude_factor ! scale by st_y_amplitude_factor
+      accz = accz * st_z_amplitude_factor ! scale by st_z_amplitude_factor
     endif
 #endif
 ! ifndef CORRECT_BULK_MOTION
@@ -310,7 +316,6 @@ subroutine Stir(blockCount, blockList, dt, pass)
           solnData(VELX_VAR,i,j,k) = solnData(VELX_VAR,i,j,k) + accel*dt - correction
 #endif
 
-#if NDIM > 1
 #ifdef VELY_VAR
 #ifdef ACCY_VAR
           accel = solnData(ACCY_VAR,i,j,k)
@@ -322,9 +327,7 @@ subroutine Stir(blockCount, blockList, dt, pass)
 #endif
           solnData(VELY_VAR,i,j,k) = solnData(VELY_VAR,i,j,k) + accel*dt - correction
 #endif
-#endif
 
-#if NDIM > 2
 #ifdef VELZ_VAR
 #ifdef ACCZ_VAR
           accel = solnData(ACCZ_VAR,i,j,k)
@@ -336,7 +339,6 @@ subroutine Stir(blockCount, blockList, dt, pass)
 #endif
           solnData(VELZ_VAR,i,j,k) = solnData(VELZ_VAR,i,j,k) + accel*dt - correction
 #endif
-#endif
 
 #ifdef VELX_VAR
           ekin_new = 0.5*(solnData(VELX_VAR,i,j,k)**2+solnData(VELY_VAR,i,j,k)**2+solnData(VELZ_VAR,i,j,k)**2)
@@ -346,6 +348,10 @@ subroutine Stir(blockCount, blockList, dt, pass)
 #ifdef ENER_VAR
           ! update the total energy
           solnData(ENER_VAR,i,j,k) = solnData(ENER_VAR,i,j,k) + d_ekin
+#endif
+#ifdef EKIN_VAR
+          ! update the kinetic energy
+          solnData(EKIN_VAR,i,j,k) = solnData(EKIN_VAR,i,j,k) + d_ekin
 #endif
 #ifdef DENS_VAR
           ! add up total injected kinetic energy
