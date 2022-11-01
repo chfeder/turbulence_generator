@@ -80,8 +80,7 @@ def analyse(args, parser):
         cfp.plot(x=q, y=pdf, label="$"+dirs[d]+"$")
         # fit and plot fit
         print("fit for "+dirs[d]+" component:")
-        params = {"mean": [-1.0, 0.0, 1.0], "sigma": [1e-6, 1.0, 1e6]}
-        fit_result = cfp.fit(Gaussian_func, q, pdf, params=params)
+        fit_result = cfp.fit(Gaussian_func, q, pdf)
         xfit = np.linspace(q.min(),q.max(),num=500)
         yfit = Gaussian_func(xfit, *fit_result.popt)
         cfp.plot(x=xfit, y=yfit, label="$\mathrm{fit:}\:"+dirs[d]+"$")
