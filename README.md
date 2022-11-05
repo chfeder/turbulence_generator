@@ -13,6 +13,8 @@ Main files:
 
 Directory 'plugins' contains examples of how TurbGen.h is used in hydrodynamical codes.
 
+Directory 'python' contains a python frontend, which calls TurbGen to generate single turbulent fields and to analyse their properties (statistics, PDFs, power spectra).
+
 ### What are the first steps when working with this repository? ###
 
 * Create a fork of this repo to your own bitbucket account.
