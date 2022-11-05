@@ -1,8 +1,8 @@
-# Turbulence Generator #
+# TurbGen - Turbulence Generator #
 
 This tool generates a time sequence of random Fourier modes via an Ornstein-Uhlenbeck (OU) process, used to drive turbulence in hydrodynamical simulation codes. It can also generate single turbulent realisations.
 
-Turbulence driving based on this method is currently supported by implementations in AREPO, FLASH, GADGET, PHANTOM, PLUTO, QUOKKA.
+Turbulence driving based on this method is currently supported by implementations in AREPO, FLASH, GADGET, PHANTOM, PLUTO.
 
 Main files:
 
