@@ -26,6 +26,7 @@
 #define TURBULENCE_GENERATOR_H
 
 #include <iostream>
+#include <sstream>
 #include <vector>
 #include <algorithm>
 #include <string>
@@ -66,7 +67,7 @@ class TurbGen
         int ncmp; // number of components (1, 2, 3, depending on whether we create vx, vy, vz)
         int random_seed, seed; // 'random seed' is the original starting seed, then 'seed' gets updated by call to random number generator
         int spect_form; // spectral form (Band, Parabola, Power Law)
-        int nsteps_per_turnover_time; // number of driving patterns per turnover time
+        int nsteps_per_t_turb; // number of driving patterns per turnover time
         int step; // internal OU step number
         double L[3]; // domain physical length L[dim] with dim = X, Y, Z
         double velocity; // velocity dispersion
@@ -78,6 +79,8 @@ class TurbGen
         double sol_weight, sol_weight_norm; // weight for decomposition into solenoidal and compressive modes
         double power_law_exp; // for power-law spectrum (spect_form = 2): exponent
         double angles_exp; // for power-law spectrum (spect_form = 2): angles exponent for sparse sampling
+        double ampl_factor[3]; // scale amplitude by this factor (default: 1.0, 1.0, 1.0)
+        int ampl_auto_adjust; // switch (0,1) to turn off/on automatic amplitude adjustment
 
     /// Constructors
     public: TurbGen(void)
@@ -118,7 +121,7 @@ class TurbGen
         return t_decay;
     };
     public: int get_nsteps_per_turnover_time(void) {
-        return nsteps_per_turnover_time;
+        return nsteps_per_t_turb;
     };
     // ******************************************************
     public: int get_number_of_components(void) {
@@ -138,7 +141,7 @@ class TurbGen
     // ******************************************************
 
     // ******************************************************
-    private: void set_derived_parameters(void) {
+    private: void set_number_of_components(void) {
         // error check on user setting of ndim
         if ((ndim != 1) && (ndim != 1.5) && (ndim != 2) && (ndim != 2.5) && (ndim != 3)) {
             TurbGen_printf("ERROR: number of dimensions must be in [1, 1.5, 2, 2.5, 3].\n");
@@ -148,6 +151,11 @@ class TurbGen
         if (ndim == 1) ncmp = 1;
         if (ndim == 2) ncmp = 2;
         if ((ndim == 1.5) || (ndim == 2.5) || (ndim == 3)) ncmp = 3;
+    };
+    // ******************************************************
+
+    // ******************************************************
+    private: void set_solenoidal_weight_normalisation(void) {
         // this makes the rms of the turbulent field independent of the solenoidal weight (see Eq. 9 in Federrath et al. 2010)
         sol_weight_norm = sqrt(3.0/ncmp)*sqrt(3.0)*1.0/sqrt(1.0-2.0*sol_weight+ncmp*pow(sol_weight,2.0));
     };
@@ -176,10 +184,13 @@ class TurbGen
         this->sol_weight = sol_weight; // solenoidal weight (0: compressive, 0.5: natural mix, 1.0: solenoidal)
         this->random_seed = random_seed; // set random seed for this realisation
         seed = this->random_seed; // set random seed for this realisation
-        OUvar = 1.0; // Ornstein-Uhlenbeck variance (the returned turbulent field needs to be re-normalised outside this call, so we just set this to 1)
+        OUvar = 1.0; // Ornstein-Uhlenbeck variance
+        // the returned turbulent field needs to be re-normalised outside this call, so we just set these to 1
+        for (unsigned int d = 0; d < 3; d++) ampl_factor[d] = 1.0; // amplitude factor
         if (verbose) TurbGen_printf("===============================================================================\n");
         // set derived parameters
-        set_derived_parameters();
+        set_number_of_components();
+        set_solenoidal_weight_normalisation();
         // initialise modes
         init_modes();
         // initialise random phases
@@ -212,39 +223,52 @@ class TurbGen
             fclose(fp);
         }
         // read parameter file
-        double k_driv, k_min, k_max, ampl_coeff;
-        read_from_parameter_file("ndim", 'd', &ndim); // Number of spatial dimensions (1, 1.5, 2, 2.5, 3)
-        read_from_parameter_file("Lx", 'd', &L[X]); // Length of box in x
-        read_from_parameter_file("Lx", 'd', &L[Y]); // Length of box in y
-        read_from_parameter_file("Ly", 'd', &L[Z]); // Length of box in z
-        read_from_parameter_file("velocity", 'd', &velocity); // Target turbulent velocity dispersion
-        read_from_parameter_file("k_driv", 'd', &k_driv); // driving wavenumber in 2pi/L; sets t_decay below
-        read_from_parameter_file("k_min", 'd', &k_min); // min wavenumber in 2pi/L
-        read_from_parameter_file("k_max", 'd', &k_max); // max wavenumber in 2pi/L
-        read_from_parameter_file("sol_weight", 'd', &sol_weight); // solenoildal weight
-        read_from_parameter_file("spect_form", 'i', &spect_form); // spectral form
-        read_from_parameter_file("power_law_exp", 'd', &power_law_exp); // power-law exponent (if spect_form=2)
-        read_from_parameter_file("angles_exp", 'd', &angles_exp); // angles sampling exponent (if spect_form=2)
-        read_from_parameter_file("ampl_coeff", 'd', &ampl_coeff); // driving amplitude coefficient (to adjust to target velocity)
-        read_from_parameter_file("random_seed", 'i', &random_seed); // random seed
-        read_from_parameter_file("nsteps_per_turnover_time", 'i', &nsteps_per_turnover_time); // number of pattern updates per t_decay
+        std::vector<double> ret;
+        double k_driv, k_min, k_max;
+        // get the number of dimensions, and based on that, set the number of vector field components
+        ret = read_from_parameter_file("ndim", "d"); ndim = ret[0]; // Number of spatial dimensions (1, 1.5, 2, 2.5, 3)
+        set_number_of_components(); // set number of components
+        std::string ncmp_str; // number of component (ncmp) as string type
+        std::stringstream dummystream;
+        dummystream << ncmp; dummystream >> ncmp_str; dummystream.clear();
+        // read remaining parameters from file
+        ret = read_from_parameter_file("L", ncmp_str+"d"); // Length of domain (box) x[y[z]]
+        for (unsigned int d = 0; d < ncmp; d++) L[d] = ret[d];
+        ret = read_from_parameter_file("velocity", "d"); velocity = ret[0]; // Target turbulent velocity dispersion
+        ret = read_from_parameter_file("k_driv", "d"); k_driv = ret[0]; // driving wavenumber in 2pi/L; sets t_decay below
+        ret = read_from_parameter_file("k_min", "d"); k_min = ret[0]; // min wavenumber in 2pi/L
+        ret = read_from_parameter_file("k_max", "d"); k_max = ret[0]; // max wavenumber in 2pi/L
+        ret = read_from_parameter_file("sol_weight", "d"); sol_weight = ret[0]; // solenoildal weight
+        ret = read_from_parameter_file("spect_form", "i"); spect_form = (int)ret[0]; // spectral form
+        ret = read_from_parameter_file("power_law_exp", "d"); power_law_exp = ret[0]; // power-law exponent (if spect_form=2)
+        ret = read_from_parameter_file("angles_exp", "d"); angles_exp = ret[0]; // angles sampling exponent (if spect_form=2)
+        ret = read_from_parameter_file("ampl_factor", ncmp_str+"d"); // adjust driving amplitude by factor in x[y[z]] (to adjust to target velocity)
+        for (unsigned int d = 0; d < ncmp; d++) ampl_factor[d] = ret[d];
+        ret = read_from_parameter_file("ampl_auto_adjust", "i"); ampl_auto_adjust = (int)ret[0]; // automatic amplitude adjustment switch
+        ret = read_from_parameter_file("random_seed", "i"); random_seed = (int)ret[0]; // random seed
+        ret = read_from_parameter_file("nsteps_per_t_turb", "i"); nsteps_per_t_turb = (int)ret[0]; // number of pattern updates per t_decay
         // define derived physical quantities
         stir_min = (k_min-DBL_EPSILON) * 2*M_PI / L[X]; // Minimum driving wavenumber <~  k_min * 2pi / Lx
         stir_max = (k_max+DBL_EPSILON) * 2*M_PI / L[X]; // Maximum driving wavenumber >~  k_max * 2pi / Lx
         t_decay = L[X] / k_driv / velocity;             // Auto-correlation time, t_turb = Lx / k_driv / velocity;
                                                         // i.e., turbulent turnover (crossing) time; with k_driv in units of 2pi/Lx
-        energy = pow(ampl_coeff*velocity,3.0) / L[X];   // Energy input rate => driving amplitude ~ sqrt(energy/t_decay)
-                                                        // Note that energy input rate ~ velocity^3 * L_box^-1
-                                                        // ampl_coeff is the amplitude coefficient and needs to be
-                                                        // adjusted to approach actual target velocity dispersion
-        OUvar = sqrt(energy/t_decay);                   // Ornstein-Uhlenbeck variance
-        dt = t_decay / nsteps_per_turnover_time;        // time step in OU process and for creating new driving pattern
+        dt = t_decay / nsteps_per_t_turb;               // time step in OU process and for creating new driving pattern
         step = -1;                                      // set internal OU step to -1 for start-up
         seed = random_seed;                             // copy original seed into local seed;
                                                         // local seeds gets updated everytime the random number generator is called
+        const double ampl_coeff = 0.15;                 // This is the default amplitude coefficient ('ampl_coeff') that often
+                                                        // (based on Mach ~ 1, naturally-mixed driving) leads to a good match of the
+                                                        // user-to-target velocity dispersion.
+                                                        // However, the amplitudes can be adjusted via ampl_factor_in[X,Y,Z].
+        energy = pow(ampl_coeff*velocity, 3.0) / L[X];  // Energy input rate => driving amplitude ~ sqrt(energy/t_decay).
+                                                        // Note that energy input rate ~ velocity^3 / L_box.
+        OUvar = sqrt(energy/t_decay);                   // set Ornstein-Uhlenbeck (OU) variance
+        // We raise the user-set ampl_factor to the 1.5th power, so the user can more easily adjust this as a pure factor
+        // of target-to-measured velocity disperion (this is because the amplitude is actually ~ velocity^1.5; see just above).
+        for (unsigned int d = 0; d < ncmp; d++) ampl_factor[d] = pow(ampl_factor[d], 1.5);
         if (verbose) TurbGen_printf("===============================================================================\n");
-        // set derived parameters
-        set_derived_parameters();
+        // set solenoidal weight normalisation
+        set_solenoidal_weight_normalisation();
         // initialise modes
         init_modes();
         // initialise Ornstein-Uhlenbeck sequence
@@ -258,15 +282,22 @@ class TurbGen
         return 0;
     }; // init_driving
 
+    // ******************************************************
+    public: bool check_for_update(const double time) {
+        // call overloaded check_for_update() without automatic amplitude adjustment (v_turb < 0)
+        double v_turb[3]; for (int d = 0; d < 3; d++) v_turb[d] = -1.0;
+        return check_for_update(time, v_turb);
+    }; // check_for_update(time)
 
     // ******************************************************
-    public: bool check_for_update(double time) {
+    public: bool check_for_update(const double time, const double v_turb[]) {
         // ******************************************************
         // Update driving pattern based on input 'time'.
         // If it is 'time' to update the pattern, call OU noise update
         // and update the decomposition coefficients; otherwise, simply return.
         // ******************************************************
         if (verbose > 1) TurbGen_printf(FuncSig(__func__)+"entering.\n");
+        // check if we need to update the OU pattern
         int step_requested = floor(time / dt); // requested OU step number based on input 'time'
         if (verbose > 1) TurbGen_printf("step_requested = %i\n", step_requested);
         if (step_requested <= step) {
@@ -274,9 +305,36 @@ class TurbGen
             if (verbose > 1) TurbGen_printf(FuncSig(__func__)+"exiting.\n");
             return false; // no update (yet) -> return false, i.e., no change of driving pattern
         }
+        // check to see if we do automatic adjustment of the driving amplitude to reach user-defined target turbulent velocity dispersion
+        if ((ampl_auto_adjust == 1) && (v_turb[X] > 0)) {
+            double v_turb_for_ampl_adjust[3];
+            // copy v_turb into v_turb_for_ampl_adjust (default, if we do not use time_averaging)
+            for (int d = 0; d < ncmp; d++) v_turb_for_ampl_adjust[d] = v_turb[d]; // current v_turb
+            // if the time is right, adjust the amplitude
+            if (time > 0.1*t_decay) { // auto-adjustment start time (start at t > 0.1 turnover times; could start later)
+                double ampl_factor_adjusted[3];
+                double ampl_adjust_timescale[3];
+                for (int d = 0; d < ncmp; d++) {
+                    // ampl_factor_new would be the perfect match at this moment (based on target velocity and current v_turb)
+                    double ampl_factor_new = ampl_factor[d] * pow(velocity / v_turb_for_ampl_adjust[d] / sqrt(ncmp), 1.5);
+                    // approach ampl_factor_new based on timecale 'ampl_adjust_timescale' to avoid strong over- and under-shooting
+                    ampl_adjust_timescale[d] = pow(ampl_factor_new/ampl_factor[d], 0.5) * t_decay; // experimental
+                    double damping_factor = exp(-dt/ampl_adjust_timescale[d]);
+                    ampl_factor_adjusted[d] = ampl_factor[d] * damping_factor + (1.0-damping_factor) * ampl_factor_new;
+                }
+                TurbGen_printf(" ===> auto-adjusting driving amplitude: ampl_factor (auto-adjusted) =");
+                for (int d = 0; d < ncmp; d++) TurbGen_printf_raw(" %f", pow(ampl_factor_adjusted[d], 1.0/1.5));
+                TurbGen_printf_raw("\n");
+                TurbGen_printf(" ===> amplitude adjustment timescale (in units of t_turb) =");
+                for (int d = 0; d < ncmp; d++) TurbGen_printf_raw(" %f", ampl_adjust_timescale[d]/t_decay);
+                TurbGen_printf_raw("\n");
+                for (int d = 0; d < ncmp; d++) ampl_factor[d] = ampl_factor_adjusted[d]; // set new (adjusted) ampl_factor
+            }
+        } // if (auto_adjust_amplitude)
         // if we are here: update OU vector
         for (int is = step; is < step_requested; is++) {
             OU_noise_update(); // this seeks to the requested OU state (updates OUphases)
+            step++; // update internal OU step number
             if (verbose > 1) TurbGen_printf("step = %i, time = %f\n", step, step*dt);
         }
         get_decomposition_coeffs(); // calculate solenoidal and compressive coefficients (aka, akb) from OUphases
@@ -284,7 +342,7 @@ class TurbGen
         if (verbose) TurbGen_printf("Generated new turbulence driving pattern: #%6i, time = %e, time/t_turb = %-7.2f\n", step, time_gen, time_gen/t_decay);
         if (verbose > 1) TurbGen_printf(FuncSig(__func__)+"exiting.\n");
         return true; // we just updated the driving pattern
-    }; // check_for_update
+    }; // check_for_update(time, v_turb)
 
 
     // ******************************************************
@@ -362,9 +420,9 @@ class TurbGen
                     }
                     // copy into return grid
                     long index = k*n[X]*n[Y] + j*n[X] + i;
-                    return_grid[X][index] = v[X];
-                    if (ncmp > 1) return_grid[Y][index] = v[Y];
-                    if (ncmp > 2) return_grid[Z][index] = v[Z];
+                    return_grid[X][index] = v[X] * ampl_factor[X];
+                    if (ncmp > 1) return_grid[Y][index] = v[Y] * ampl_factor[Y];
+                    if (ncmp > 2) return_grid[Z][index] = v[Z] * ampl_factor[Z];
                 } // i
             } // j
         } // k
@@ -415,9 +473,9 @@ class TurbGen
             real = ( cosx[m]*cosy[m] - sinx[m]*siny[m] ) * cosz[m] - ( sinx[m]*cosy[m] + cosx[m]*siny[m] ) * sinz[m];
             imag = cosx[m] * ( cosy[m]*sinz[m] + siny[m]*cosz[m] ) + sinx[m] * ( cosy[m]*cosz[m] - siny[m]*sinz[m] );
             // return vector for this position x, y, z
-            v[X] += ampl[m] * (aka[X][m]*real - akb[X][m]*imag);
-            if (ncmp > 1) v[Y] += ampl[m] * (aka[Y][m]*real - akb[Y][m]*imag);
-            if (ncmp > 2) v[Z] += ampl[m] * (aka[Z][m]*real - akb[Z][m]*imag);
+            v[X] += ampl[m] * (aka[X][m]*real - akb[X][m]*imag) * ampl_factor[X];
+            if (ncmp > 1) v[Y] += ampl[m] * (aka[Y][m]*real - akb[Y][m]*imag) * ampl_factor[Y];
+            if (ncmp > 2) v[Z] += ampl[m] * (aka[Z][m]*real - akb[Z][m]*imag) * ampl_factor[Z];
         }
         if (verbose > 1) TurbGen_printf(FuncSig(__func__)+"exiting.\n");
     }; // get_turb_vector
@@ -456,13 +514,14 @@ class TurbGen
 
 
     // ******************************************************
-    private: int read_from_parameter_file(std::string search, char type, void * ret) {
+    private: std::vector<double> read_from_parameter_file(std::string search, std::string type) {
         // ******************************************************
         // parse each line in turbulence generator 'parameter_file' and search for 'search'
         // at the beginning of each line; if 'search' is found return double of value after '='
         // type: 'i' for int, 'd' for double return type void *ret
         // ******************************************************
         if (verbose > 1) TurbGen_printf(FuncSig(__func__)+"entering.\n");
+        std::vector<double> ret; // return vector object
         FILE * fp;
         char * line = NULL;
         size_t len = 0;
@@ -488,20 +547,50 @@ class TurbGen
                 char dest[100]; memset(dest, '\0', sizeof(dest));
                 strncpy(dest, substr1+1, end_index-1);
                 if (verbose > 1) TurbGen_printf("dest = '%s'\n", dest);
-                if (type == 'i') *(int*)(ret) = atoi(dest);
-                if (type == 'd') *(double*)(ret) = atof(dest);
+                if ((type == "i") || (type == "1i")) {
+                    ret.resize(1); ret[0] = double(atoi(dest));
+                }
+                if ((type == "d") || (type == "1d")) {
+                    ret.resize(1); ret[0] = double(atof(dest));
+                }
+                if ((type == "2d") || (type == "3d")) {
+                    int ncmp;
+                    std::stringstream dummystream;
+                    dummystream << type[0]; dummystream >> ncmp; dummystream.clear();
+                    ret.resize(ncmp);
+                    if (verbose > 1) TurbGen_printf("n = %i\n", ncmp);
+                    std::string cmpstr = dest;
+                    int cnt = 0; // count the number of ','
+                    for (size_t offset = cmpstr.find(","); offset != std::string::npos; offset = cmpstr.find(",", offset+1)) ++cnt;
+                    if (verbose > 1) TurbGen_printf("cnt = %i\n", cnt);
+                    if ((cnt != 0) && (cnt != ncmp-1)) { // error check
+                        std::string msg = ClassSignature+"ERROR: parameter '%s' specifies %i components, which does not match actual number of components: %i\n";
+                        printf(msg.c_str(), search.c_str(), cnt+1, ncmp);
+                        exit(-1);
+                    }
+                    for (int d=0; d<ncmp; d++) {
+                        std::string substr = cmpstr; // copy into substr in case no commas provided
+                        if (cnt == ncmp-1) { // if user has specified ncmp components; else copy the same value into each component
+                            substr = cmpstr.substr(0, cmpstr.find(",")); // extract substring before first ','
+                            cmpstr = cmpstr.substr(cmpstr.find(",")+1, cmpstr.size()-cmpstr.find(",")); // reduce cmpstr to remainder for next loop iter
+                        }
+                        if (verbose > 1)TurbGen_printf("substr = '%s'\n", substr.c_str());
+                        dummystream << substr; dummystream >> ret[d]; dummystream.clear(); // copy into ret
+                    }
+                }
                 found = true;
             }
             if (found) break;
         }
         fclose(fp);
         if (line) free(line);
-        if (found) return 0; else {
+        if (!found) {
             std::string msg = ClassSignature+"ERROR: requested parameter '%s' not found in file '%s'\n";
             printf(msg.c_str(), search.c_str(), parameter_file.c_str());
             exit(-1);
         }
         if (verbose > 1) TurbGen_printf(FuncSig(__func__)+"exiting.\n");
+        return ret;
     }; // read_from_parameter_file
 
 
@@ -711,7 +800,13 @@ class TurbGen
         // initialize pseudo random sequence for the Ornstein-Uhlenbeck (OU) process
         // ******************************************************
         OUphases.resize(nmodes*ncmp*2);
-        for (int i = 0; i < nmodes*ncmp*2; i++) OUphases[i] = OUvar * get_random_number();
+        for (int m = 0; m < nmodes; m++) {
+            for (int d = 0; d < ncmp; d++) {
+                for (int ir = 0; ir < 2; ir++) {
+                    OUphases[2*ncmp*m+2*d+ir] = OUvar * get_random_number();
+                }
+            }
+        }
     }; // OU_noise_init
 
 
@@ -746,11 +841,14 @@ class TurbGen
         //
         // ******************************************************
         const double damping_factor = exp(-dt/t_decay);
-        for (int i = 0; i < nmodes*ncmp*2; i++) {
-            OUphases[i] = OUphases[i] * damping_factor + 
+        for (int m = 0; m < nmodes; m++) {
+            for (int d = 0; d < ncmp; d++) {
+                for (int ir = 0; ir < 2; ir++) {
+                    OUphases[2*ncmp*m+2*d+ir] = OUphases[2*ncmp*m+2*d+ir] * damping_factor +
                         sqrt(1.0 - damping_factor*damping_factor) * OUvar * get_random_number();
+                }
+            }
         }
-        step++; // update internal OU step number
     }; // OU_noise_update
 
 
@@ -888,6 +986,18 @@ class TurbGen
         if (PE == 0) vfprintf(stdout, new_format.c_str(), args);
         va_end(args);
     }; // TurbGen_printf
+
+    // ******************************************************
+    private: void TurbGen_printf_raw(std::string format, ...) {
+        // ******************************************************
+        // special printf prepends string and only lets PE=0 print
+        // ******************************************************
+        va_list args;
+        va_start(args, format);
+        std::string new_format = format;
+        if (PE == 0) vfprintf(stdout, new_format.c_str(), args);
+        va_end(args);
+    }; // TurbGen_printf_raw
 
 }; // end class TurbGen
 
