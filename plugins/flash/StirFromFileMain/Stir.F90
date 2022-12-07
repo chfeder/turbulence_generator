@@ -25,6 +25,7 @@
 !!    (2011/2012: added a write-out of the energy injection rate)
 !!    (2017: added dynamic allocation of st_nmodes arrays)
 !!    (2022: use of turbulence_generator C++ library/header, TurbGen.h)
+!!    (2022: support for automatic amplitude adjustment)
 !!
 !!***
 
@@ -59,16 +60,15 @@ subroutine Stir(blockCount, blockList, dt, pass)
   real(kind=8)               :: pos_beg(MDIM), pos_end(MDIM)
   integer                    :: ncells(MDIM)
   real                       :: time, ekin_old, ekin_new, d_ekin
-  real                       :: mass, xMomentum, yMomentum, zMomentum, xForce, yForce, zForce
+  real                       :: mass, momentum(MDIM), force(MDIM)
+  real(kind=8)               :: v_turb(MDIM) ! turbulent velocity dispersion (for amplitude auto adjustment in TurbGen)
 
   integer, parameter :: funit = 22
   character(len=80)  :: outfile = "stir.dat"
   logical            :: check_for_io
 
-  integer, parameter :: nGlobalSum = 7                  ! Number of globally-summed quantities
-  real(kind=8)       :: globalSumQuantities(nGlobalSum) ! Global summed quantities
-  real(kind=8)       :: localSumQuantities(nGlobalSum)  ! Global summed quantities
-  real(kind=8)       :: ekin_added, ekin_added_red, dvol, dmass, accel
+  real(kind=8), dimension(7) :: locSumVars, globSumVars ! locally and globally summed variables
+  real(kind=8) :: ekin_added, ekin_added_red, dvol, dmass, accel
 
   real, DIMENSION(:,:,:,:), POINTER :: solnData
 
@@ -83,9 +83,10 @@ subroutine Stir(blockCount, blockList, dt, pass)
   if (firstCall) then
     if (dr_globalMe == MASTER_PE) then
       open(funit, file=trim(outfile), position='APPEND') ! write header
-      write(funit,'(10(1X,A16))') '[00]time', '[01]dt', '[02]d(Ekin)', '[03]d(Ekin)/dt', &
+      write(funit,'(13(1X,A16))') '[00]time', '[01]dt', '[02]d(Ekin)', '[03]d(Ekin)/dt', &
                                   '[04]xForce', '[05]yForce', '[06]zForce', &
-                                  '[07]xMomentum', '[08]yMomentum', '[09]zMomentum'
+                                  '[07]xMomentum', '[08]yMomentum', '[09]zMomentum', &
+                                  '[10]xVturb', '[11]yVturb', '[12]zVturb'
       close(funit)
     endif
     firstCall = .false.
@@ -119,25 +120,18 @@ subroutine Stir(blockCount, blockList, dt, pass)
 
   call Timers_start("Stir")
 
-  ! check if we need to update the turbulent acceleration field
-  update_accel = .false.
-  call st_stir_check_for_update_of_turb_pattern_c(real(time,kind=8), update_accel_int)
-  if (update_accel_int .ne. 0) update_accel = .true.
-
-  globalSumQuantities(:) = 0.0
-  localSumQuantities (:) = 0.0
-
 #ifdef CORRECT_BULK_MOTION
+
+  ! local and global sum containers
+  locSumVars (:) = 0.0
+  globSumVars(:) = 0.0
 
   ! sum quantities over list of blocks (to determine global mean force and momentum)
   do blockID = 1, blockCount
-
     ! get the index limits of the block
     call Grid_getBlkIndexLimits(blockList(blockID), blkLimits, blkLimitsGC)
-
     ! getting the dx's
     call Grid_getDeltas(blocklist(blockID), del)
-
 #if NDIM == 1
     dvol = del(IAXIS)
 #endif
@@ -147,7 +141,79 @@ subroutine Stir(blockCount, blockList, dt, pass)
 #if NDIM == 3
     dvol = del(IAXIS) * del(JAXIS) * del(KAXIS)
 #endif
+    ! get a pointer to the current block of data
+    call Grid_getBlkPtr(blockList(blockID), solnData)
+    ! loop over all grid cells and sum local contributions to global mean force and momentum
+    do k = blkLimits(LOW,KAXIS), blkLimits(HIGH,KAXIS)
+      do j = blkLimits(LOW,JAXIS), blkLimits(HIGH,JAXIS)
+        do i = blkLimits(LOW,IAXIS), blkLimits(HIGH,IAXIS)
+          ! cell mass
+          dmass = solnData(DENS_VAR,i,j,k)*dvol
+          ! mass
+          locSumVars(1) = locSumVars(1) + dmass
+#ifdef VELX_VAR
+          ! momentum x
+          locSumVars(2) = locSumVars(2) + solnData(VELX_VAR,i,j,k)*dmass
+          ! vx**2
+          locSumVars(3) = locSumVars(3) + solnData(VELX_VAR,i,j,k)**2*dvol
+#endif
+#ifdef VELY_VAR
+          ! momentum y
+          locSumVars(4) = locSumVars(4) + solnData(VELY_VAR,i,j,k)*dmass
+          ! vy**2
+          locSumVars(5) = locSumVars(5) + solnData(VELY_VAR,i,j,k)**2*dvol
+#endif
+#ifdef VELZ_VAR
+          ! momentum z
+          locSumVars(6) = locSumVars(6) + solnData(VELZ_VAR,i,j,k)*dmass
+          ! vz**2
+          locSumVars(7) = locSumVars(7) + solnData(VELZ_VAR,i,j,k)**2*dvol
+#endif
+        enddo ! i
+      enddo ! j
+    enddo ! k
+    call Grid_releaseBlkPtr(blockList(blockID), solnData)
+  enddo ! blocks
 
+  ! now communicate all global summed quantities to all processors
+  call MPI_AllReduce(locSumVars(1:7), globSumVars(1:7), 7, FLASH_DOUBLE, MPI_Sum, MPI_Comm_World, error)
+
+  mass = globSumVars(1) ! gas mass
+  momentum(1:3) = globSumVars(2:6:2) ! gas momentum
+  ! turbulent velocity dispersion fort call to st_stir_check_for_update_of_turb_pattern_c
+  v_turb(1:3) = sqrt( globSumVars(3:7:2) - (momentum(1:3)/mass)**2 + tiny(0.0) )
+
+#else
+  v_turb(1:3) = -1.0 ! no amplitude auto adjustment in this case
+#endif
+! ifdef CORRECT_BULK_MOTION
+
+  ! check if we need to update the turbulent acceleration field
+  update_accel = .false.
+  call st_stir_check_for_update_of_turb_pattern_c(real(time,kind=8), update_accel_int, v_turb)
+  if (update_accel_int .ne. 0) update_accel = .true.
+
+#ifdef CORRECT_BULK_MOTION
+
+  ! local and global sum containers
+  locSumVars (:) = 0.0
+  globSumVars(:) = 0.0
+
+  ! sum quantities over list of blocks (to determine global mean force and momentum)
+  do blockID = 1, blockCount
+    ! get the index limits of the block
+    call Grid_getBlkIndexLimits(blockList(blockID), blkLimits, blkLimitsGC)
+    ! getting the dx's
+    call Grid_getDeltas(blocklist(blockID), del)
+#if NDIM == 1
+    dvol = del(IAXIS)
+#endif
+#if NDIM == 2
+    dvol = del(IAXIS) * del(JAXIS)
+#endif
+#if NDIM == 3
+    dvol = del(IAXIS) * del(JAXIS) * del(KAXIS)
+#endif
     ! update turbulent acceleration field, otherwise use previous acceleration field
     if (update_accel) then
       call Grid_getBlkPhysicalSize(blockList(blockID), blockSize)
@@ -156,14 +222,9 @@ subroutine Stir(blockCount, blockList, dt, pass)
       pos_end = blockCenter + 0.5*blockSize - del/2.0 ! last  active cell coordinate in block (x,y,z)
       ncells = blkLimits(HIGH,:)-blkLimits(LOW,:)+1 ! number of active cells in (x,y,z)
       call st_stir_get_turb_vector_unigrid_c(pos_beg, pos_end, ncells, accx, accy, accz)
-      accx = accx * st_x_amplitude_factor ! scale by st_x_amplitude_factor
-      accy = accy * st_y_amplitude_factor ! scale by st_y_amplitude_factor
-      accz = accz * st_z_amplitude_factor ! scale by st_z_amplitude_factor
     endif
-
     ! get a pointer to the current block of data
     call Grid_getBlkPtr(blockList(blockID), solnData)
-
     ! loop over all grid cells and sum local contributions to global mean force and momentum
     do k = blkLimits(LOW,KAXIS), blkLimits(HIGH,KAXIS)
       kk = k-blkLimits(LOW,KAXIS)+1 ! z index of accx, accy, accz starts at 1 and goes to NZB
@@ -171,7 +232,6 @@ subroutine Stir(blockCount, blockList, dt, pass)
         jj = j-blkLimits(LOW,JAXIS)+1 ! y index of accx, accy, accz starts at 1 and goes to NYB
         do i = blkLimits(LOW,IAXIS), blkLimits(HIGH,IAXIS)
           ii = i-blkLimits(LOW,IAXIS)+1 ! x index of accx, accy, accz starts at 1 and goes to NXB
-
 #ifdef ACCX_VAR
           ! if we use ACCX_VAR, ..Y, ..Z (usually when using AMR because of re-gridding), copy from accx, ..y, ..z
           if (update_accel) then
@@ -180,61 +240,34 @@ subroutine Stir(blockCount, blockList, dt, pass)
             solnData(ACCZ_VAR,i,j,k) = accz(ii,jj,kk)
           endif
 #endif
-
           ! cell mass
           dmass = solnData(DENS_VAR,i,j,k)*dvol
-
-          ! mass
-#ifdef DENS_VAR
-          localSumQuantities(1) = localSumQuantities(1) + dmass
-
-          ! momentum
-#ifdef VELX_VAR
-          localSumQuantities(2) = localSumQuantities(2) + solnData(VELX_VAR,i,j,k)*dmass
-#endif
-#ifdef VELY_VAR
-          localSumQuantities(3) = localSumQuantities(3) + solnData(VELY_VAR,i,j,k)*dmass
-#endif
-#ifdef VELZ_VAR
-          localSumQuantities(4) = localSumQuantities(4) + solnData(VELZ_VAR,i,j,k)*dmass
-#endif
           ! driving force
 #ifdef ACCX_VAR
-          localSumQuantities(5) = localSumQuantities(5) + solnData(ACCX_VAR,i,j,k)*dmass
+          locSumVars(1) = locSumVars(1) + solnData(ACCX_VAR,i,j,k)*dmass
 #else
-          localSumQuantities(5) = localSumQuantities(5) + accx(ii,jj,kk)*dmass
+          locSumVars(1) = locSumVars(1) + accx(ii,jj,kk)*dmass
 #endif
 #ifdef ACCY_VAR
-          localSumQuantities(6) = localSumQuantities(6) + solnData(ACCY_VAR,i,j,k)*dmass
+          locSumVars(2) = locSumVars(2) + solnData(ACCY_VAR,i,j,k)*dmass
 #else
-          localSumQuantities(6) = localSumQuantities(6) + accy(ii,jj,kk)*dmass
+          locSumVars(2) = locSumVars(2) + accy(ii,jj,kk)*dmass
 #endif
 #ifdef ACCZ_VAR
-          localSumQuantities(7) = localSumQuantities(7) + solnData(ACCZ_VAR,i,j,k)*dmass
+          locSumVars(3) = locSumVars(3) + solnData(ACCZ_VAR,i,j,k)*dmass
 #else
-          localSumQuantities(7) = localSumQuantities(7) + accz(ii,jj,kk)*dmass
+          locSumVars(3) = locSumVars(3) + accz(ii,jj,kk)*dmass
 #endif
-#endif
-! ifdef DENS_VAR
         enddo ! i
       enddo ! j
     enddo ! k
-
-    call Grid_releaseBlkPtr(blockList(blockID),solnData)
-
+    call Grid_releaseBlkPtr(blockList(blockID), solnData)
   enddo ! blocks
 
   ! now communicate all global summed quantities to all processors
-  call MPI_AllReduce(localSumQuantities, globalSumQuantities, nGlobalSum, &
-                      MPI_DOUBLE_PRECISION, MPI_Sum, MPI_Comm_World, error)
+  call MPI_AllReduce(locSumVars(1:3), globSumVars(1:3), 3, FLASH_DOUBLE, MPI_Sum, MPI_Comm_World, error)
 
-  mass      = globalSumQuantities(1)
-  xMomentum = globalSumQuantities(2)
-  yMomentum = globalSumQuantities(3)
-  zMomentum = globalSumQuantities(4)
-  xForce    = globalSumQuantities(5)
-  yForce    = globalSumQuantities(6)
-  zForce    = globalSumQuantities(7)
+  force(1:3) = globSumVars(1:3) ! driving force
 
 #endif
 ! ifdef CORRECT_BULK_MOTION
@@ -271,9 +304,6 @@ subroutine Stir(blockCount, blockList, dt, pass)
       pos_end = blockCenter + 0.5*blockSize - del/2.0 ! last  active cell coordinate in block (x,y,z)
       ncells = blkLimits(HIGH,:)-blkLimits(LOW,:)+1 ! number of active cells in (x,y,z)
       call st_stir_get_turb_vector_unigrid_c(pos_beg, pos_end, ncells, accx, accy, accz)
-      accx = accx * st_x_amplitude_factor ! scale by st_x_amplitude_factor
-      accy = accy * st_y_amplitude_factor ! scale by st_y_amplitude_factor
-      accz = accz * st_z_amplitude_factor ! scale by st_z_amplitude_factor
     endif
 #endif
 ! ifndef CORRECT_BULK_MOTION
@@ -311,7 +341,7 @@ subroutine Stir(blockCount, blockList, dt, pass)
           accel = accx(ii,jj,kk)
 #endif
 #ifdef CORRECT_BULK_MOTION
-          correction = xForce/mass*dt + xMomentum/mass
+          correction = force(1)/mass*dt + momentum(1)/mass
 #endif
           solnData(VELX_VAR,i,j,k) = solnData(VELX_VAR,i,j,k) + accel*dt - correction
 #endif
@@ -323,7 +353,7 @@ subroutine Stir(blockCount, blockList, dt, pass)
           accel = accy(ii,jj,kk)
 #endif
 #ifdef CORRECT_BULK_MOTION
-          correction = yForce/mass*dt + yMomentum/mass
+          correction = force(2)/mass*dt + momentum(2)/mass
 #endif
           solnData(VELY_VAR,i,j,k) = solnData(VELY_VAR,i,j,k) + accel*dt - correction
 #endif
@@ -335,7 +365,7 @@ subroutine Stir(blockCount, blockList, dt, pass)
           accel = accz(ii,jj,kk)
 #endif
 #ifdef CORRECT_BULK_MOTION
-          correction = zForce/mass*dt + zMomentum/mass
+          correction = force(3)/mass*dt + momentum(3)/mass
 #endif
           solnData(VELZ_VAR,i,j,k) = solnData(VELZ_VAR,i,j,k) + accel*dt - correction
 #endif
@@ -365,7 +395,7 @@ subroutine Stir(blockCount, blockList, dt, pass)
       enddo ! j
     enddo ! k
 
-    call Grid_releaseBlkPtr(blockList(blockID),solnData)
+    call Grid_releaseBlkPtr(blockList(blockID), solnData)
 
   enddo ! loop over blocks
 
@@ -386,8 +416,7 @@ subroutine Stir(blockCount, blockList, dt, pass)
         ! only MASTER_PE writes
         if (dr_globalMe == MASTER_PE) then
           open(funit, file=trim(outfile), position='APPEND')
-          write(funit,'(10(1X,ES16.9))') time, dt, ekin_added, ekin_added/dt, &
-                                        xForce, yForce, zForce, xMomentum, yMomentum, zMomentum
+          write(funit,'(13(1X,ES16.9))') time, dt, ekin_added, ekin_added/dt, force(1:3), momentum(1:3), v_turb(1:3)
           close(funit)
         endif
       endif
