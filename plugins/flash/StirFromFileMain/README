@@ -1,6 +1,6 @@
 This is the collection of source code files used in the FLASH hydro code for driving turbulence.
 
-It uses the C++ implementation of TurbGen.h with Fortran (with a Fortran-to-C interface in st_stir_turbulence_generator_interface.C) to construct the physical acceleration field from the Fourier mode sequence in the driving .inp file.
+It uses the C++ implementation of TurbGen.h with Fortran (with a Fortran-to-C interface in st_stir_TurbGen_interface.C) to construct the physical acceleration field from the Fourier mode sequence in the driving .par file.
 
 This code can be used as a template for other hydro codes. Short description of main files:
 
@@ -8,5 +8,5 @@ This code can be used as a template for other hydro codes. Short description of 
 - Stir_init.F90 initialises the turbulence generator.
 - Stir.F90 couples the generated physical acceleration field to the hydro equations, i.e., it applies it as an acceleration, which modifies the velocity field (VELX, VELY, VELZ). It also checks for updates of the turbulence driving pattern.
 - Stir_computeDt.F90 implements a time step constraint based on the turbulence driving; for typical applications, this is usually not actually necessary, but included here for completeness.
-- st_stir_turbulence_generator_interface.C is the Fortran-to-C interface to access functions in TurbGen.h.
+- st_stir_TurbGen_interface.C is the Fortran-to-C interface to access functions in TurbGen.h.
 - Config is the FLASH internal module configuration file.
