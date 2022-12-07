@@ -279,6 +279,10 @@ subroutine StirICs(blockCount, blockList)
           ! update the total energy
           solnData(ENER_VAR,ib:ie,j,k) = solnData(ENER_VAR,ib:ie,j,k) + ke_new(:)-ke_old(:)
 #endif
+#ifdef EKIN_VAR
+          ! update the kinetic energy
+          solnData(EKIN_VAR,ib:ie,j,k) = solnData(EKIN_VAR,ib:ie,j,k) + ke_new(:)-ke_old(:)
+#endif
 #ifdef DENS_VAR
           ! compute injected kinetic energy and add it to the sum
           ekin_added = ekin_added + SUM((ke_new(:)-ke_old(:))*solnData(DENS_VAR,ib:ie,j,k))*dvol
