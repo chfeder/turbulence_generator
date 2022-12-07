@@ -9,7 +9,7 @@ Main files:
 * 'TurbGen.h' contains the main C++ class with functions and data structures used by the generator.
 * 'TurbGen.cpp' is an MPI-parallelised program that computes turbulent field(s) with specified parameters and writes the field(s) to an HDF5 file.
 * 'TurbGenDemo.cpp' contains 3 basic examples for how to include and use the generator, including the generation of driving via an OU process and the generation of single turbulent fields.
-* 'turbulence_generator.inp' is the parameter file that controls the turbulence driving.
+* 'TurbGen.par' is the parameter file that controls the turbulence driving.
 
 Directory 'plugins' contains examples of how TurbGen.h is used in hydrodynamical codes.
 
