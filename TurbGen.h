@@ -18,7 +18,7 @@
 //  Federrath et al. (2010, A&A 512, A81); Federrath (2013, MNRAS 436, 1245);
 //  Federrath et al. (2021, Nature Astronomy 5, 365)
 //
-// AUTHOR: Christoph Federrath, 2008-2022
+// AUTHOR: Christoph Federrath, 2008-2023
 //
 // *******************************************************************************
 
@@ -27,6 +27,7 @@
 
 #include <iostream>
 #include <sstream>
+#include <fstream>
 #include <vector>
 #include <algorithm>
 #include <string>
@@ -81,6 +82,7 @@ class TurbGen
         double angles_exp; // for power-law spectrum (spect_form = 2): angles exponent for sparse sampling
         double ampl_factor[3]; // scale amplitude by this factor (default: 1.0, 1.0, 1.0)
         int ampl_auto_adjust; // switch (0,1) to turn off/on automatic amplitude adjustment
+        std::string evolfile;
 
     /// Constructors
     public: TurbGen(void)
@@ -102,6 +104,7 @@ class TurbGen
         ClassSignature = "TurbGen: ";
         this->PE = PE;
         verbose = 1; // default verbose level
+        evolfile = "TurbGen.dat";
     };
 
     // get function signature for printing to stdout
@@ -204,9 +207,12 @@ class TurbGen
         return 0;
     }; // init_single_realisation
 
-
     // ******************************************************
     public: int init_driving(std::string parameter_file) {
+        return init_driving(parameter_file, 0.0); // call with time = 0.0
+    }; // init_driving (overloaded)
+    // ******************************************************
+    public: int init_driving(std::string parameter_file, const double time) {
         // ******************************************************
         // Initialise the turbulence generator and all relevant internal data structures by reading from 'parameter_file'.
         // This is used for driving turbulence (as opposed to init_single_realisation, which is for creating a single pattern).
@@ -263,6 +269,9 @@ class TurbGen
         energy = pow(ampl_coeff*velocity, 3.0) / L[X];  // Energy input rate => driving amplitude ~ sqrt(energy/t_decay).
                                                         // Note that energy input rate ~ velocity^3 / L_box.
         OUvar = sqrt(energy/t_decay);                   // set Ornstein-Uhlenbeck (OU) variance
+        // if we auto-adjust the amplitude, we need to read the ampl_factor from the evolution file, on restart (time > 0)
+        if ((ampl_auto_adjust == 1) && (time > 0.0))
+            if (!read_ampl_factor_from_evol_file(time)) return -1;
         // We raise the user-set ampl_factor to the 1.5th power, so the user can more easily adjust this as a pure factor
         // of target-to-measured velocity disperion (this is because the amplitude is actually ~ velocity^1.5; see just above).
         for (unsigned int d = 0; d < ncmp; d++) ampl_factor[d] = pow(ampl_factor[d], 1.5);
@@ -277,6 +286,17 @@ class TurbGen
         get_decomposition_coeffs();
         // print info
         if (verbose) print_info("driving");
+        // write header of time evolution file
+        if (verbose) TurbGen_printf("Writing time evolution information to file '%s'.\n", evolfile.c_str());
+        if (PE == 0) {
+            std::ofstream outfilestream(evolfile.c_str(), std::ios::app);
+            outfilestream   << std::setw(24) << "#01_time" << std::setw(24) << "#02_time_in_t_turb"
+                            << std::setw(24) << "#03_ampl_factor_x" << std::setw(24) << "#04_ampl_factor_y" << std::setw(24) << "#05_ampl_factor_z"
+                            << std::setw(24) << "#06_v_turb_prev_x" << std::setw(24) << "#07_v_turb_prev_y" << std::setw(24) << "#08_v_turb_prev_z"
+                            << std::endl;
+            outfilestream.close();
+            outfilestream.clear();
+        }
         if (verbose) TurbGen_printf("===============================================================================\n");
         if (verbose > 1) TurbGen_printf(FuncSig(__func__)+"exiting.\n");
         return 0;
@@ -340,10 +360,66 @@ class TurbGen
         get_decomposition_coeffs(); // calculate solenoidal and compressive coefficients (aka, akb) from OUphases
         double time_gen = step * dt;
         if (verbose) TurbGen_printf("Generated new turbulence driving pattern: #%6i, time = %e, time/t_turb = %-7.2f\n", step, time_gen, time_gen/t_decay);
+        if (PE == 0) write_to_evol_file(time, ampl_factor, v_turb); // write evolution file
         if (verbose > 1) TurbGen_printf(FuncSig(__func__)+"exiting.\n");
         return true; // we just updated the driving pattern
     }; // check_for_update(time, v_turb)
 
+    // ******************************************************
+    public: bool write_to_evol_file(const double time, const double ampl_factor[], const double v_turb[]) {
+        if (verbose > 1) TurbGen_printf("Writing to evolution file: time = %e, time/t_turb = %-7.2f\n", time, time/t_decay);
+        std::ofstream outfilestream(evolfile.c_str(), std::ios::app);
+        outfilestream.precision(16);
+        outfilestream   << std::scientific << std::setw(24) << time << std::setw(24) << time/t_decay
+                        << std::setw(24) << pow(ampl_factor[X],1.0/1.5) << std::setw(24) << pow(ampl_factor[Y],1.0/1.5) << std::setw(24) << pow(ampl_factor[Z],1.0/1.5)
+                        << std::setw(24) << v_turb[X] << std::setw(24) << v_turb[Y] << std::setw(24) << v_turb[Z]
+                        << std::endl;
+        outfilestream.close();
+        outfilestream.clear();
+        return true;
+    }; // write_to_evol_file
+
+    // ******************************************************
+    public: bool read_ampl_factor_from_evol_file(const double time) {
+        if (verbose > 1) TurbGen_printf("Reading from evolution file: time = %e, time/t_turb = %-7.2f\n", time, time/t_decay);
+        std::ifstream infilestream(evolfile.c_str());
+        if (infilestream.is_open()) {
+            // read each line from file into a vector
+            std::vector<std::string> lines;
+            std::string line;
+            while (std::getline(infilestream, line)) lines.push_back(line);
+            infilestream.close();
+            TurbGen_printf("Restoring ampl_factor from '%s' for current simulation time = %e\n", evolfile.c_str(), time);
+            bool initial_copy_done = false;
+            // loop backwards through the vector to find the right time entry
+            for (int i = lines.size() - 1; i >= 0; i--) {
+                if (verbose > 1) TurbGen_printf((lines[i]+'\n').c_str());
+                // skip header line(s)
+                if (lines[i].find("time") != std::string::npos) continue;
+                // split line
+                std::istringstream buffer(lines[i]);
+                std::vector<std::string> line_split((std::istream_iterator<std::string>(buffer)), std::istream_iterator<std::string>());
+                double time_in_file = double(atof(line_split[0].c_str())); // time
+                double ampl_factor_in_file[3];
+                for (unsigned int d = 0; d < ncmp; d++) ampl_factor_in_file[d] = double(atof(line_split[d+2].c_str()));
+                if (verbose > 1) TurbGen_printf("time_in_file, ampl_factor_in_file = %e %e %e %e\n", time_in_file, ampl_factor_in_file[X], ampl_factor_in_file[Y], ampl_factor_in_file[Z]);
+                if (!initial_copy_done) { // copy the last valid ampl_factor from the evolution file
+                    for (unsigned int d = 0; d < ncmp; d++) ampl_factor[d] = ampl_factor_in_file[d];
+                    initial_copy_done = true;
+                }
+                if (time_in_file >= time-1.1*dt) { // search backwards and update ampl_factor with last valid time
+                    for (unsigned int d = 0; d < ncmp; d++) ampl_factor[d] = ampl_factor_in_file[d];
+                }
+                else break;
+            }
+            TurbGen_printf("restored ampl_factor = %e %e %e \n", ampl_factor[X], ampl_factor[Y], ampl_factor[Z]);
+        }
+        else {
+            TurbGen_printf("This is a restart with ampl_auto_adjust = 1, but unable to open file '%s' to restore ampl_factor.\n", evolfile.c_str());
+            return false;
+        }
+        return true;
+    }; // read_ampl_factor_from_evol_file
 
     // ******************************************************
     public: void get_turb_vector_unigrid(const double pos_beg[], const double pos_end[], const int n[], float * return_grid[]) {
