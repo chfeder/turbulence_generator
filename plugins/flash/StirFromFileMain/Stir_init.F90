@@ -23,7 +23,7 @@
 !!        whether to restrict timestep based on stirring
 !!
 !! AUTHOR
-!!  Christoph Federrath, 2008-2022
+!!  Christoph Federrath, 2008-2023
 !!
 !!***
 
@@ -31,6 +31,7 @@ subroutine Stir_init(restart)
 
   use Stir_data
   use Driver_data, ONLY : dr_globalMe
+  use Driver_interface, ONLY : Driver_getSimTime
   use RuntimeParameters_interface, ONLY : RuntimeParameters_get
 
   implicit none
@@ -39,11 +40,14 @@ subroutine Stir_init(restart)
 #include "Flash.h"
 
   logical, intent(in) :: restart
+  real :: time
 
   call RuntimeParameters_get('useStir', st_useStir)
   call RuntimeParameters_get('st_infilename', st_infilename)
   call RuntimeParameters_get('st_computeDt', st_computeDt)
   call RuntimeParameters_get('st_stop_driving_time', st_stop_driving_time)
+
+  call Driver_getSimTime(time)
 
   if (.not. st_useStir) then
     if (dr_globalMe .eq. MASTER_PE) &
@@ -52,7 +56,8 @@ subroutine Stir_init(restart)
   endif
 
   ! initialise the turbulence generator based on parameter file provided in st_infilename
-  call st_stir_init_driving_c(trim(st_infilename)//char(0), dt_update_accel);
+  ! and time (in case of restart and automatic amplitude adjustment; ampl_auto_adjust = 1)
+  call st_stir_init_driving_c(trim(st_infilename)//char(0), real(time,kind=8), dt_update_accel);
 
   return
 
