@@ -12,12 +12,12 @@ static TurbGen st_TurbGenStir;
 // Here we also return the delta time between updates of driving patterns, which can be
 // used to constrain the simulation timestep (to make sure the code goes through all
 // driving patterns and doesn't skip any).
-extern "C" void FTOC(st_stir_init_driving_c)(char * parameter_file, double * dt_driv) {
+extern "C" void FTOC(st_stir_init_driving_c)(char * parameter_file, double * time, double * dt_driv) {
   int MyPE = 0;
   MPI_Comm_rank(MPI_COMM_WORLD, &MyPE);
   st_TurbGenStir = TurbGen(MyPE); // create TurbGen obj for Stir
   std::string param_file = parameter_file;
-  if (st_TurbGenStir.init_driving(param_file) != 0) exit(-1);
+  if (st_TurbGenStir.init_driving(param_file, *time) != 0) exit(-1);
   // return time between pattern updates
   *dt_driv = st_TurbGenStir.get_turnover_time() / st_TurbGenStir.get_nsteps_per_turnover_time();
 }
