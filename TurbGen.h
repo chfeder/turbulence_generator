@@ -26,6 +26,8 @@
 #define TURBULENCE_GENERATOR_H
 
 #include <iostream>
+#include <iomanip>
+#include <iterator>
 #include <sstream>
 #include <fstream>
 #include <vector>
