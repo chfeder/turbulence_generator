@@ -37,11 +37,13 @@ int verbose = 1; // 0: all standard output off (quiet mode)
 double ndim = 3; // dimensionality (must be 1 or 1.5 or 2 or 2.5 or 3)
 int N[3] = {64, 64, 64}; // number of cells in turbulent output field in x, y, z
 double L[3] = {1.0, 1.0, 1.0}; // size of box in x, y, z
-double k_min = 2.0; // minimum wavenumber for turbulent field (in units of 2pi / L[X])
+double k_min = 2.0;  // minimum wavenumber for turbulent field (in units of 2pi / L[X])
 double k_max = 20.0; // minimum wavenumber for turbulent field (in units of 2pi / L[X])
+double k_mid = 1e38; // middle  wavenumber in case of optional 2nd PL section in [k_mid, k_max]
 int spect_form = 2; // 0: band/rectangle/constant, 1: paraboloid, 2: power law
 double power_law_exp = -2.0; // if spect_form == 2: power-law exponent (e.g., -2 would be Burgers,
                              // or -5/3 would be Kolmogorov, or 1.5 would Kazantsev)
+double power_law_exp_2 = -2.0; // exponent for optional 2nd PL section in [k_mid, k_max]
 double angles_exp = 1.0; // if spect_form == 2: spectral sampling of angles;
                          // number of modes (angles) in k-shell surface increases as k^angles_exp.
                          // For full sampling, angles_exp = 2.0; for healpix-type sampling, angles_exp = 0.0.
@@ -99,7 +101,7 @@ int main(int argc, char * argv[])
     tg.set_verbose(verbose);
 
     // initialise generator to return a single turbulent realisation based on input parameters
-    tg.init_single_realisation(ndim, L, k_min, k_max, spect_form, power_law_exp, angles_exp, sol_weight, random_seed);
+    tg.init_single_realisation(ndim, L, k_min, k_mid, k_max, spect_form, power_law_exp, power_law_exp_2, angles_exp, sol_weight, random_seed);
 
     // get the number of vector field components
     int ncmp = tg.get_number_of_components();
@@ -231,10 +233,12 @@ int main(int argc, char * argv[])
     hdfio.write(&ndim, "ndim", hdf5dims, H5T_NATIVE_DOUBLE, MPI_COMM);
     hdfio.write(&ncmp, "ncmp", hdf5dims, H5T_NATIVE_INT, MPI_COMM);
     hdfio.write(&k_min, "kmin", hdf5dims, H5T_NATIVE_DOUBLE, MPI_COMM);
+    hdfio.write(&k_mid, "kmid", hdf5dims, H5T_NATIVE_DOUBLE, MPI_COMM);
     hdfio.write(&k_max, "kmax", hdf5dims, H5T_NATIVE_DOUBLE, MPI_COMM);
     hdfio.write(&spect_form, "spect_form", hdf5dims, H5T_NATIVE_INT, MPI_COMM);
     if (spect_form == 2) {
-        hdfio.write(&power_law_exp, "power_law_exp", hdf5dims, H5T_NATIVE_DOUBLE, MPI_COMM);
+        hdfio.write(&power_law_exp,   "power_law_exp",   hdf5dims, H5T_NATIVE_DOUBLE, MPI_COMM);
+        hdfio.write(&power_law_exp_2, "power_law_exp_2", hdf5dims, H5T_NATIVE_DOUBLE, MPI_COMM);
         hdfio.write(&angles_exp, "angles_exp", hdf5dims, H5T_NATIVE_DOUBLE, MPI_COMM);
     }
     hdfio.write(&sol_weight, "sol_weight", hdf5dims, H5T_NATIVE_DOUBLE, MPI_COMM);
@@ -382,6 +386,12 @@ int ParseInputs(const vector<string> Argument)
                 dummystream << Argument[i+1]; dummystream >> k_min; dummystream.clear();
             } else return -1;
         }
+        if (Argument[i] != "" && Argument[i] == "-kmid")
+        {
+            if (Argument.size()>i+1) {
+                dummystream << Argument[i+1]; dummystream >> k_mid; dummystream.clear();
+            } else return -1;
+        }
         if (Argument[i] != "" && Argument[i] == "-kmax")
         {
             if (Argument.size()>i+1) {
@@ -398,6 +408,12 @@ int ParseInputs(const vector<string> Argument)
         {
             if (Argument.size()>i+1) {
                 dummystream << Argument[i+1]; dummystream >> power_law_exp; dummystream.clear();
+            } else return -1;
+        }
+        if (Argument[i] != "" && Argument[i] == "-power_law_exp_2")
+        {
+            if (Argument.size()>i+1) {
+                dummystream << Argument[i+1]; dummystream >> power_law_exp_2; dummystream.clear();
             } else return -1;
         }
         if (Argument[i] != "" && Argument[i] == "-angles_exp")
@@ -456,9 +472,11 @@ void HelpMe(void)
         << "     -N <Nx [Ny [Nz]]>         : number of grid cells for generated turbulent field; (default: 64 64 64)" << endl
         << "     -L <Lx [Ly [Lz]]>         : physical size of box in which to generate turbulent field; (default: 1.0 1.0 1.0)" << endl
         << "     -kmin <val>               : minimum wavenumber of generated field in units of 2pi/L[X]; (default: 2.0)" << endl
+        << "     -kmid <val>               : middle  wavenumber for optional 2nd power-law section (only for spect_form=2); (default: 1e38; i.e., not active)" << endl
         << "     -kmax <val>               : maximum wavenumber of generated field in units of 2pi/L[X]; (default: 20.0)" << endl
         << "     -spect_form <0, 1, 2>     : spectral form: 0 (band/rectangle/constant), 1 (paraboloid), 2 (power law); (default: 2)" << endl
         << "     -power_law_exp <val>      : if spect_form 2: power-law exponent of power-law spectrum (e.g. Kolmogorov: -5/3, Burgers: -2, Kazantsev: 1.5); (default: -2.0)" << endl
+        << "     -power_law_exp_2 <val>    : if spect_form 2: power-law exponent of 2nd power-law section (default: -2.0)" << endl
         << "     -angles_exp <val>         : if spect_form 2: angles exponent for sparse sampling (e.g., 2.0: full sampling, 0.0: healpix-like sampling); (default: 1.0)" << endl
         << "     -sol_weight <val>         : solenoidal weight: 1.0 (divergence-free field), 0.5 (natural mix), 0.0 (curl-free field); (default: 0.5)" << endl
         << "     -random_seed <val>        : random seed for turbulent field; (default: 140281)" << endl
