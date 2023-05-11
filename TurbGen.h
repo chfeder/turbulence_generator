@@ -52,7 +52,7 @@ namespace NameSpaceTurbGen {
  *   or continuous driving of turbulence based on an Ornstein-Uhlenbeck process.
  *
  * @author Christoph Federrath (christoph.federrath@anu.edu.au)
- * @version 2022
+ * @version 2023
  *
  *********************************************************************************/
 
@@ -78,9 +78,10 @@ class TurbGen
         double dt; // time step for OU update and for generating driving patterns
         double energy; // driving energy injection rate (~ v^3 / L)
         double OUvar; // OU variance corresponding to turbulent turnover (decay) time and energy input rate (OUvar = sqrt(energy/t_decay))
-        double stir_min, stir_max; // min and max wavnumber for driving or single realisation
+        double kmin, kmax; // min and max wavenumber for driving or single realisation
+        double kmid; // kmid is optional and in between kmin and kmax, which can be used for an optional 2nd PL section from kmid to kmax
         double sol_weight, sol_weight_norm; // weight for decomposition into solenoidal and compressive modes
-        double power_law_exp; // for power-law spectrum (spect_form = 2): exponent
+        double power_law_exp, power_law_exp_2; // for power-law spectrum (spect_form = 2): exponent (power_law_exp_2 is for an optional 2nd PL section from kmid to kmax)
         double angles_exp; // for power-law spectrum (spect_form = 2): angles exponent for sparse sampling
         double ampl_factor[3]; // scale amplitude by this factor (default: 1.0, 1.0, 1.0)
         int ampl_auto_adjust; // switch (0,1) to turn off/on automatic amplitude adjustment
@@ -171,6 +172,15 @@ class TurbGen
         const double ndim, const double L[3], const double k_min, const double k_max,
         const int spect_form, const double power_law_exp, const double angles_exp,
         const double sol_weight, const int random_seed) {
+        return init_single_realisation( ndim, L, k_min, k_max, k_max,
+                                        spect_form, power_law_exp, power_law_exp, angles_exp,
+                                        sol_weight, random_seed );
+    }; // init_single_realisation (overloaded)
+    // ******************************************************
+    public: int init_single_realisation(
+        const double ndim, const double L[3], const double k_min, const double k_mid, const double k_max,
+        const int spect_form, const double power_law_exp, const double power_law_exp_2, const double angles_exp,
+        const double sol_weight, const int random_seed) {
         // ******************************************************
         // Initialise the turbulence generator for a single turbulent realisation, e.g., for producing
         // turbulent initial conditions, with parameters specified as inputs to the function; see descriptions below.
@@ -181,10 +191,12 @@ class TurbGen
         this->L[X] = L[X]; // Length of box in x; used for wavenumber conversion below
         this->L[Y] = L[Y]; // Length of box in y
         this->L[Z] = L[Z]; // Length of box in z
-        stir_min = (k_min-DBL_EPSILON) * 2*M_PI / L[X]; // Minimum driving wavenumber <~  k_min * 2pi / Lx
-        stir_max = (k_max+DBL_EPSILON) * 2*M_PI / L[X]; // Maximum driving wavenumber >~  k_max * 2pi / Lx
+        this->kmin = (k_min-DBL_EPSILON) * 2*M_PI / L[X]; // Minimum wavenumber <~  k_min * 2pi / Lx
+        this->kmax = (k_max+DBL_EPSILON) * 2*M_PI / L[X]; // Maximum wavenumber >~  k_max * 2pi / Lx
+        this->kmid = (k_mid+DBL_EPSILON) * 2*M_PI / L[X]; // Middle  wavenumber >~  k_mid * 2pi / Lx (only if spect_form = 2, i.e., power law; for 2nd PL section in [kmid, kmax])
         this->spect_form = spect_form; // (0: band/rectangle/constant, 1: paraboloid, 2: power law)
         this->power_law_exp = power_law_exp; // power-law amplitude exponent (only if spect_form = 2, i.e., power law)
+        this->power_law_exp_2 = power_law_exp_2; // power-law amplitude exponent 2 (only if spect_form = 2, i.e., power law; for 2nd PL section in [kmid, kmax])
         this->angles_exp = angles_exp; // angles exponent (only if spect_form = 2, i.e., power law)
         this->sol_weight = sol_weight; // solenoidal weight (0: compressive, 0.5: natural mix, 1.0: solenoidal)
         this->random_seed = random_seed; // set random seed for this realisation
@@ -249,6 +261,7 @@ class TurbGen
         ret = read_from_parameter_file("sol_weight", "d"); sol_weight = ret[0]; // solenoildal weight
         ret = read_from_parameter_file("spect_form", "i"); spect_form = (int)ret[0]; // spectral form
         ret = read_from_parameter_file("power_law_exp", "d"); power_law_exp = ret[0]; // power-law exponent (if spect_form=2)
+        power_law_exp_2 = power_law_exp; // driving does not support a 2nd PL section (yet)
         ret = read_from_parameter_file("angles_exp", "d"); angles_exp = ret[0]; // angles sampling exponent (if spect_form=2)
         ret = read_from_parameter_file("ampl_factor", ncmp_str+"d"); // adjust driving amplitude by factor in x[y[z]] (to adjust to target velocity)
         for (unsigned int d = 0; d < ncmp; d++) ampl_factor[d] = ret[d];
@@ -256,8 +269,9 @@ class TurbGen
         ret = read_from_parameter_file("random_seed", "i"); random_seed = (int)ret[0]; // random seed
         ret = read_from_parameter_file("nsteps_per_t_turb", "i"); nsteps_per_t_turb = (int)ret[0]; // number of pattern updates per t_decay
         // define derived physical quantities
-        stir_min = (k_min-DBL_EPSILON) * 2*M_PI / L[X]; // Minimum driving wavenumber <~  k_min * 2pi / Lx
-        stir_max = (k_max+DBL_EPSILON) * 2*M_PI / L[X]; // Maximum driving wavenumber >~  k_max * 2pi / Lx
+        kmin = (k_min-DBL_EPSILON) * 2*M_PI / L[X]; // Minimum driving wavenumber <~  k_min * 2pi / Lx
+        kmax = (k_max+DBL_EPSILON) * 2*M_PI / L[X]; // Maximum driving wavenumber >~  k_max * 2pi / Lx
+        kmid = kmax; // driving does not support a 2nd PL section (yet)
         t_decay = L[X] / k_driv / velocity;             // Auto-correlation time, t_turb = Lx / k_driv / velocity;
                                                         // i.e., turbulent turnover (crossing) time; with k_driv in units of 2pi/Lx
         dt = t_decay / nsteps_per_t_turb;               // time step in OU process and for creating new driving pattern
@@ -572,6 +586,7 @@ class TurbGen
         if (spect_form == 1) TurbGen_printf(" spectral form                                       = %i (Parabola)\n", spect_form);
         if (spect_form == 2) TurbGen_printf(" spectral form                                       = %i (Power Law)\n", spect_form);
         if (spect_form == 2) TurbGen_printf(" power-law exponent                                  = %e\n", power_law_exp);
+        if (spect_form == 2 && kmid != kmax) TurbGen_printf(" power-law exponent 2                                = %e\n", power_law_exp_2);
         if (spect_form == 2) TurbGen_printf(" power-law angles sampling exponent                  = %e\n", angles_exp);
         TurbGen_printf(" box size Lx                                         = %e\n", L[X]);
         if (print_mode == "driving") {
@@ -579,8 +594,9 @@ class TurbGen
             TurbGen_printf(" turbulent turnover (auto-correlation) time          = %e\n", t_decay);
             TurbGen_printf("  -> characteristic turbulent wavenumber (in 2pi/Lx) = %e\n", L[X] / velocity / t_decay);
         }
-        TurbGen_printf(" minimum wavenumber (in 2pi/Lx)                      = %e\n", stir_min / (2*M_PI) * L[X]);
-        TurbGen_printf(" maximum wavenumber (in 2pi/Lx)                      = %e\n", stir_max / (2*M_PI) * L[X]);
+        TurbGen_printf(" minimum wavenumber (in 2pi/Lx)                      = %e\n", kmin / (2*M_PI) * L[X]);
+        if (spect_form == 2 && kmid != kmax) TurbGen_printf(" middle  wavenumber (in 2pi/Lx)                      = %e\n", kmid / (2*M_PI) * L[X]);
+        TurbGen_printf(" maximum wavenumber (in 2pi/Lx)                      = %e\n", kmax / (2*M_PI) * L[X]);
         if (print_mode == "driving") {
             TurbGen_printf(" amplitude coefficient                               = %e\n", pow(energy*L[X],1.0/3.0) / velocity);
             TurbGen_printf("  -> driving energy (injection rate)                 = %e\n", energy);
@@ -688,12 +704,12 @@ class TurbGen
         double rand, phi, theta;
 
         // this is for spect_form = 1 (paraboloid) only
-        // prefactor for amplitude normalistion to 1 at kc = 0.5*(stir_min+stir_max)
-        parab_prefact = -4.0 / pow(stir_max-stir_min,2.0);
+        // prefactor for amplitude normalistion to 1 at kc = 0.5*(kmin+kmax)
+        parab_prefact = -4.0 / pow(kmax-kmin,2.0);
 
         // characteristic k for scaling the amplitude below
-        kc = stir_min;
-        if (spect_form == 1) kc = 0.5*(stir_min+stir_max);
+        kc = kmin;
+        if (spect_form == 1) kc = 0.5*(kmin+kmax);
 
         ikmin[X] = 0;
         ikmin[Y] = 0;
@@ -714,7 +730,7 @@ class TurbGen
                 for (ik[Z] = ikmin[Z]; ik[Z] <= ikmax[Z]; ik[Z]++) {
                     k[Z] = 2*M_PI * ik[Z] / L[Z];
                     ka = sqrt( k[X]*k[X] + k[Y]*k[Y] + k[Z]*k[Z] );
-                    if ((ka >= stir_min) && (ka <= stir_max)) {
+                    if ((ka >= kmin) && (ka <= kmax)) {
                         nmodes++;
                         if ((int)ndim > 1) nmodes += 1;
                         if ((int)ndim > 2) nmodes += 2;
@@ -747,7 +763,7 @@ class TurbGen
 
                         ka = sqrt( k[X]*k[X] + k[Y]*k[Y] + k[Z]*k[Z] );
 
-                        if ((ka >= stir_min) && (ka <= stir_max)) {
+                        if ((ka >= kmin) && (ka <= kmax)) {
 
                             if (spect_form == 0) amplitude = 1.0;                                    // Band
                             if (spect_form == 1) amplitude = fabs(parab_prefact*pow(ka-kc,2.0)+1.0); // Parabola
@@ -803,8 +819,8 @@ class TurbGen
             rand = ran2(&seed_init);
 
             // loop between smallest and largest k
-            ikmin[0] = std::max(1, (int)round(stir_min*L[X]/(2*M_PI)));
-            ikmax[0] =             (int)round(stir_max*L[X]/(2*M_PI));
+            ikmin[0] = std::max(1, (int)round(kmin*L[X]/(2*M_PI)));
+            ikmax[0] =             (int)round(kmax*L[X]/(2*M_PI));
 
             if (verbose) TurbGen_printf("Generating turbulent modes within k = [%i, %i]\n", ikmin[0], ikmax[0]);
 
@@ -838,7 +854,7 @@ class TurbGen
 
                     ka = sqrt( k[X]*k[X] + k[Y]*k[Y] + k[Z]*k[Z] );
 
-                    if ((ka >= stir_min) && (ka <= stir_max)) {
+                    if ((ka >= kmin) && (ka <= kmax)) {
 
                         if (nmodes > NameSpaceTurbGen::tgd_max_nmodes) {
                             TurbGen_printf(" nmodes = %i, maxmodes = %i", nmodes, NameSpaceTurbGen::tgd_max_nmodes);
@@ -846,6 +862,9 @@ class TurbGen
                         }
 
                         amplitude = pow(ka/kc,power_law_exp); // Power law
+
+                        if (ka >= kmid) // optional power-law section 2 (between kmid and kmax)
+                            amplitude = pow(kmid/kmin,power_law_exp) * pow(ka/kmid,power_law_exp_2);
 
                         // note: power spectrum ~ amplitude^2 (1D), amplitude^2 * 2pi k (2D), amplitude^2 * 4pi k^2 (3D)
                         // ...and correct for the number of angles sampled relative to the full sampling (k^2 per k-shell in 3D)
