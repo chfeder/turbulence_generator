@@ -39,10 +39,14 @@ def generate(args, parser):
         arg_N += " "+str(args.N[i])
         arg_L += " "+str(args.L[i])
     arg_kmin = " -kmin "+str(args.kmin)
+    arg_kmid = " -kmid "+str(args.kmid)
     arg_kmax = " -kmax "+str(args.kmax)
     args_spect_form = " -spect_form "+str(args.spect_form)
-    args_power_law_exp = ""
-    if args.spect_form == 2: args_power_law_exp = " -power_law_exp "+str(args.power_law_exp)
+    args_power_law_exp   = ""
+    args_power_law_exp_2 = ""
+    if args.spect_form == 2:
+        args_power_law_exp   = " -power_law_exp "  +str(args.power_law_exp)
+        args_power_law_exp_2 = " -power_law_exp_2 "+str(args.power_law_exp_2)
     args_angles_exp = " -angles_exp "+str(args.angles_exp)
     args_sol_weight = " -sol_weight "+str(args.sol_weight)
     args_random_seed = " -random_seed "+str(args.random_seed)
@@ -52,7 +56,8 @@ def generate(args, parser):
     if args.write_modes: args_write_modes = " -write_modes"
     args_mpirun = ""
     if args.num_procs: args_mpirun = "mpirun -np "+str(args.num_procs)+" "
-    cmd = args_mpirun+"./TurbGen"+arg_ndim+arg_N+arg_L+arg_kmin+arg_kmax+args_spect_form+args_power_law_exp+args_angles_exp
+    cmd = args_mpirun+"./TurbGen"+arg_ndim+arg_N+arg_L+arg_kmin+arg_kmid+arg_kmax
+    cmd += args_spect_form+args_power_law_exp+args_power_law_exp_2+args_angles_exp
     cmd += args_sol_weight+args_random_seed+args_verbose+args_outputfile+args_write_modes
     cfp.run_shell_command(cmd) # run TurbGen
 # =========================================================
@@ -104,13 +109,19 @@ def analyse(args, parser):
     if "P_trv" in sp: cfp.plot(x=k[ind], y=sp["P_trv"][ind], label="trans")
     spect_form = int(hdfio.read(args.inputfile, 'spect_form'))
     if spect_form == 2: # power law
-        power_law_exp = float(hdfio.read(args.inputfile, 'power_law_exp'))
+        power_law_exp   = float(hdfio.read(args.inputfile, 'power_law_exp'))
+        power_law_exp_2 = float(hdfio.read(args.inputfile, 'power_law_exp_2'))
         kmin = float(hdfio.read(args.inputfile, 'kmin'))
+        kmid = float(hdfio.read(args.inputfile, 'kmid'))
         kmax = float(hdfio.read(args.inputfile, 'kmax'))
-        x = np.array([kmin,kmax])
-        y = x**power_law_exp
-        cfp.plot(x=x, y=y, label="power-law slope: "+str(power_law_exp), linestyle='dashed', color='black')
-    cfp.plot(xlabel='$k$', ylabel='$P(k)$', xlim=[0.9,1.1*np.max(k)], xlog=True, ylog=True, legend_loc='upper right', save=args.inputfile+"_spectrum.pdf")
+        x = cfp.get_1d_coords(cmin=kmin, cmax=kmax, ndim=2000, cell_centred=False)
+        y = sp["P_tot"][ind][0] * x**power_law_exp
+        ind = x >= kmid
+        if np.sum(ind) == 0:
+            ind = x == kmax
+        y[ind] = y[ind][0] * (x[ind]/x[ind][0])**power_law_exp_2
+        cfp.plot(x=x, y=y, label="power-law slopes: "+str(power_law_exp)+", "+str(power_law_exp_2), linestyle='dashed', color='black')
+    cfp.plot(xlabel='$k$', ylabel='$P(k)$', xlim=[0.9,1.1*np.max(k)], xlog=True, ylog=True, legend_loc='lower left', save=args.inputfile+"_spectrum.pdf")
 
 # =========================================================
 
@@ -132,12 +143,16 @@ if __name__ == "__main__":
         help='physical size of box in which to generate turbulent field; (default: %(default)s)')
     parser_generate.add_argument('-kmin', type=float, default=2.0,
         help='minimum wavenumber of generated field in units of 2pi/L[X]; (default: %(default)s)')
+    parser_generate.add_argument('-kmid', type=float, default=1e38,
+        help='middle  wavenumber for optional 2nd power-law section (only for spect_form=2); (default: %(default)s)')
     parser_generate.add_argument('-kmax', type=float, default=20.0,
         help='maximum wavenumber of generated field in units of 2pi/L[X]; (default: %(default)s)')
     parser_generate.add_argument('-spect_form', type=int, choices=[0, 1, 2], default=2,
         help='spectral form: 0 (band/rectangle/constant), 1 (paraboloid), 2 (power law); (default: %(default)s)')
     parser_generate.add_argument('-power_law_exp', type=float, default=-2.0,
         help='if spect_form 2: power-law exponent of power-law spectrum (e.g. Kolmogorov: -5/3, Burgers: -2, Kazantsev: 1.5); (default: %(default)s)')
+    parser_generate.add_argument('-power_law_exp_2', type=float, default=-2.0,
+        help='if spect_form 2: power-law exponent of 2nd power-law section; (default: %(default)s)')
     parser_generate.add_argument('-angles_exp', type=float, default=1.0,
         help='if spect_form 2: angles exponent for sparse sampling (e.g., 2.0: full sampling, 0.0: healpix-like sampling); (default: %(default)s)')
     parser_generate.add_argument('-sol_weight', type=float, default=0.5,
