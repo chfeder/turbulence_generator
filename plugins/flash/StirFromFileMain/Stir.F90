@@ -18,7 +18,7 @@
 !!   pass         : optional: dt-pass, in case of split solver
 !!
 !! AUTHOR
-!!   Christoph Federrath, 2008-2022
+!!   Christoph Federrath, 2008-2024
 !!
 !!    (Aug 2013: added a write-out of the correction for the center-of-mass motion)
 !!    (2012: added a pre-proc statement to treat the acceleration field as a force for testing; not the default)
@@ -31,18 +31,21 @@
 
 subroutine Stir(blockCount, blockList, dt, pass)
 
+#include "constants.h"
+#include "Flash.h"
+
   use Stir_data
   use Driver_interface, ONLY : Driver_getSimTime
   use Timers_interface, ONLY : Timers_start, Timers_stop
   use Grid_interface,   ONLY : Grid_getBlkIndexLimits, Grid_getBlkPtr, Grid_releaseBlkPtr, &
                                Grid_getDeltas, Grid_getBlkPhysicalSize, Grid_getBlkCenterCoords
   use Driver_data, ONLY : dr_nstep, dr_globalMe
+#ifdef FLASH_IO
   use IO_data, ONLY : io_integralFreq
+#endif
 
   implicit none
 
-#include "constants.h"
-#include "Flash.h"
 #include "Flash_mpi.h"
 
   integer, intent(in)                        :: blockCount
@@ -59,15 +62,19 @@ subroutine Stir(blockCount, blockList, dt, pass)
   real, dimension(MDIM)      :: del, blockSize, blockCenter ! MDIM is always 3
   real(kind=8)               :: pos_beg(MDIM), pos_end(MDIM)
   integer                    :: ncells(MDIM)
-  real                       :: time, ekin_old, ekin_new, d_ekin
-  real                       :: mass, momentum(MDIM), force(MDIM)
+  real                       :: ekin_old, ekin_new, d_ekin
+  real*8                     :: time
+  real                       :: volume, mass, momentum(MDIM), force(MDIM)
   real(kind=8)               :: v_turb(MDIM) ! turbulent velocity dispersion (for amplitude auto adjustment in TurbGen)
 
   integer, parameter :: funit = 22
   character(len=80)  :: outfile = "stir.dat"
   logical            :: check_for_io
+#ifndef FLASH_IO
+  integer, parameter :: io_integralFreq = -1
+#endif
 
-  real(kind=8), dimension(7) :: locSumVars, globSumVars ! locally and globally summed variables
+  real(kind=8) :: locSumVars(0:7), globSumVars(0:7) ! locally and globally summed variables
   real(kind=8) :: ekin_added, ekin_added_red, dvol, dmass, accel
 
   real, DIMENSION(:,:,:,:), POINTER :: solnData
@@ -147,6 +154,8 @@ subroutine Stir(blockCount, blockList, dt, pass)
     do k = blkLimits(LOW,KAXIS), blkLimits(HIGH,KAXIS)
       do j = blkLimits(LOW,JAXIS), blkLimits(HIGH,JAXIS)
         do i = blkLimits(LOW,IAXIS), blkLimits(HIGH,IAXIS)
+          ! volume
+          locSumVars(0) = locSumVars(0) + dvol
           ! cell mass
           dmass = solnData(DENS_VAR,i,j,k)*dvol
           ! mass
@@ -176,12 +185,13 @@ subroutine Stir(blockCount, blockList, dt, pass)
   enddo ! blocks
 
   ! now communicate all global summed quantities to all processors
-  call MPI_AllReduce(locSumVars(1:7), globSumVars(1:7), 7, FLASH_DOUBLE, MPI_Sum, MPI_Comm_World, error)
+  call MPI_AllReduce(locSumVars(0:7), globSumVars(0:7), 8, FLASH_DOUBLE, MPI_Sum, MPI_Comm_World, error)
 
+  volume = globSumVars(0) ! total volume
   mass = globSumVars(1) ! gas mass
   momentum(1:3) = globSumVars(2:6:2) ! gas momentum
-  ! turbulent velocity dispersion fort call to st_stir_check_for_update_of_turb_pattern_c
-  v_turb(1:3) = sqrt( globSumVars(3:7:2) - (momentum(1:3)/mass)**2 + tiny(0.0) )
+  ! turbulent velocity dispersion for call to st_stir_check_for_update_of_turb_pattern_c
+  v_turb(1:3) = sqrt( globSumVars(3:7:2)/volume - (momentum(1:3)/mass)**2 + tiny(0.0) )
 
 #else
   v_turb(1:3) = -1.0 ! no amplitude auto adjustment in this case
