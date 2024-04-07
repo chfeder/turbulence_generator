@@ -81,7 +81,9 @@ def analyse(args, parser):
     print("standard deviation = ", std, highlight=1)
     # PDF plot
     for d in range(ncmp):
-        pdf, q = cfp.get_pdf(dat[d], bins=min(100,int(0.1*dat[d].size)))
+        pdf_obj = cfp.get_pdf(dat[d], bins=min(100,int(0.1*dat[d].size)))
+        pdf = pdf_obj.pdf
+        q = pdf_obj.bin_center
         cfp.plot(x=q, y=pdf, label="$"+dirs[d]+"$")
         # fit and plot fit
         print("fit for "+dirs[d]+" component:")
