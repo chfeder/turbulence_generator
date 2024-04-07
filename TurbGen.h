@@ -1003,7 +1003,7 @@ class TurbGen
     private: double get_random_number(void) {
         // ******************************************************
         //  get random number; draws a number randomly from a Gaussian distribution
-        //  with the standard uniform distribution function "random_number"
+        //  with the standard uniform distribution function "ran1s"
         //  using the Box-Muller transformation in polar coordinates. The
         //  resulting Gaussian has unit variance.
         // ******************************************************
