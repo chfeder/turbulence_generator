@@ -9,7 +9,7 @@
 
 USESETUPVARS Grid
 
-IF Grid <> 'UG'
+IF Grid != 'UG'
    DEFAULT AMR
 ENDIF
 
