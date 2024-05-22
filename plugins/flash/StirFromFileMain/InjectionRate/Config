@@ -1,7 +1,7 @@
 
 USESETUPVARS Grid
 
-IF Grid <> 'UG'
+IF Grid != 'UG'
    REQUIRES physics/sourceTerms/Stir/StirFromFileMain/AMR
 ENDIF
 
