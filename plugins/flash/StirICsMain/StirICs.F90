@@ -21,7 +21,7 @@
 !!   blockList(:) : The list of blocks on which to apply the stirring operator
 !!
 !! AUTHOR
-!!   Christoph Federrath, 2008-2022
+!!   Christoph Federrath, 2008-2024
 !!
 !!***
 
@@ -56,12 +56,7 @@ subroutine StirICs(blockCount, blockList)
   real                         :: mu0, dvol, RmsVelNorm
   real                         :: mass, totvol, xMomentum, yMomentum, zMomentum, xVelSq, yVelSq, zVelSq
   real                         :: xBmean, yBmean, zBmean, RmsMagNorm
-  real(kind=8)                 :: ekin_added, ekin_added_red, emag_added, emag_added_red
   real(kind=8)                 :: L(3) ! domain length
-
-  integer, parameter :: nGlobalSum = 8                  ! Number of globally-summed quantities
-  real(kind=8)       :: globalSumQuantities(nGlobalSum) ! Global summed quantities
-  real(kind=8)       :: localSumQuantities(nGlobalSum)  ! Global summed quantities
 
   real, dimension(:,:,:,:), POINTER :: solnData
 
@@ -69,6 +64,20 @@ subroutine StirICs(blockCount, blockList)
 
   real, dimension(NXB) :: ke_old, ke_new
   real, dimension(NXB) :: me_old, me_new
+
+  integer, parameter :: nGlobalSum = 8 ! Number of globally-summed quantities
+
+#ifdef HYBRID_PRECISION
+  integer, parameter :: flash_real_dtype = FLASH_DOUBLE
+  real(kind=8)       :: globalSumQuantities(nGlobalSum) ! Global summed quantities
+  real(kind=8)       :: localSumQuantities(nGlobalSum)  ! Global summed quantities
+  real(kind=8)       :: ekin_added, ekin_added_red, emag_added, emag_added_red
+#else
+  integer, parameter :: flash_real_dtype = FLASH_REAL
+  real               :: globalSumQuantities(nGlobalSum) ! Global summed quantities
+  real               :: localSumQuantities(nGlobalSum)  ! Global summed quantities
+  real               :: ekin_added, ekin_added_red, emag_added, emag_added_red
+#endif
 
   ! if not using intial conditions stirring, return
   if ((.not. st_useStirICs) .or. dr_restart) return
@@ -191,7 +200,7 @@ subroutine StirICs(blockCount, blockList)
 
     ! now communicate all global summed quantities to all processors
     call MPI_AllReduce(localSumQuantities, globalSumQuantities, nGlobalSum, &
-                       FLASH_DOUBLE, MPI_Sum, MPI_Comm_World, error)
+                       flash_real_dtype, MPI_Sum, MPI_Comm_World, error)
 
     totvol    = globalSumQuantities(1)
     mass      = globalSumQuantities(2)
@@ -305,7 +314,7 @@ subroutine StirICs(blockCount, blockList)
 
     ! sum up injected kinetic energy contributions from all blocks and processors
     ekin_added_red = 0.0
-    call MPI_Reduce(ekin_added, ekin_added_red, 1, FLASH_DOUBLE, MPI_Sum, MASTER_PE, MPI_Comm_World, error)
+    call MPI_Reduce(ekin_added, ekin_added_red, 1, flash_real_dtype, MPI_Sum, MASTER_PE, MPI_Comm_World, error)
     if (dr_globalMe == MASTER_PE) print *, 'StirICs: E_kin added  = ', ekin_added_red
     if (dr_globalMe == MASTER_PE) print *, 'StirICs: rms(v) added = ', st_rmsVelocity
 
@@ -418,7 +427,7 @@ subroutine StirICs(blockCount, blockList)
 
     ! now communicate all global summed quantities to all processors
     call MPI_AllReduce(localSumQuantities, globalSumQuantities, nGlobalSum, &
-                       FLASH_DOUBLE, MPI_Sum, MPI_Comm_World, error)
+                       flash_real_dtype, MPI_Sum, MPI_Comm_World, error)
 
     xBmean = globalSumQuantities(4) / globalSumQuantities(1)
     yBmean = globalSumQuantities(5) / globalSumQuantities(2)
@@ -517,7 +526,7 @@ subroutine StirICs(blockCount, blockList)
 
     ! sum up injected kinetic energy contributions from all blocks and processors
     emag_added_red = 0.0
-    call MPI_Reduce(emag_added, emag_added_red, 1, FLASH_DOUBLE, MPI_Sum, MASTER_PE, MPI_Comm_World, error)
+    call MPI_Reduce(emag_added, emag_added_red, 1, flash_real_dtype, MPI_Sum, MASTER_PE, MPI_Comm_World, error)
     if (dr_globalMe == MASTER_PE) print *, 'StirICs: E_mag added  = ', emag_added_red
     if (dr_globalMe == MASTER_PE) print *, 'StirICs: rms(B) added = ', &
                                         & sqrt( emag_added_red*(2*mu0) / globalSumQuantities(8) )
