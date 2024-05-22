@@ -74,9 +74,6 @@ subroutine Stir(blockCount, blockList, dt, pass)
   integer, parameter :: io_integralFreq = -1
 #endif
 
-  real(kind=8) :: locSumVars(0:7), globSumVars(0:7) ! locally and globally summed variables
-  real(kind=8) :: ekin_added, ekin_added_red, dvol, dmass, accel
-
   real, DIMENSION(:,:,:,:), POINTER :: solnData
 
 ! this is to determine whether we remove the average force and average momentum in every timestep
@@ -85,6 +82,16 @@ subroutine Stir(blockCount, blockList, dt, pass)
   real(kind=8) :: correction
 #else
   real(kind=8), parameter :: correction = 0.0
+#endif
+
+#ifdef HYBRID_PRECISION
+  integer, parameter :: flash_real_dtype = FLASH_DOUBLE
+  real(kind=8) :: locSumVars(0:7), globSumVars(0:7) ! locally and globally summed variables
+  real(kind=8) :: ekin_added, ekin_added_red, dvol, dmass, accel
+#else
+  integer, parameter :: flash_real_dtype = FLASH_REAL
+  real         :: locSumVars(0:7), globSumVars(0:7) ! locally and globally summed variables
+  real         :: ekin_added, ekin_added_red, dvol, dmass, accel
 #endif
 
   if (firstCall) then
@@ -185,7 +192,7 @@ subroutine Stir(blockCount, blockList, dt, pass)
   enddo ! blocks
 
   ! now communicate all global summed quantities to all processors
-  call MPI_AllReduce(locSumVars(0:7), globSumVars(0:7), 8, FLASH_DOUBLE, MPI_Sum, MPI_Comm_World, error)
+  call MPI_AllReduce(locSumVars(0:7), globSumVars(0:7), 8, flash_real_dtype, MPI_Sum, MPI_Comm_World, error)
 
   volume = globSumVars(0) ! total volume
   mass = globSumVars(1) ! gas mass
@@ -275,7 +282,7 @@ subroutine Stir(blockCount, blockList, dt, pass)
   enddo ! blocks
 
   ! now communicate all global summed quantities to all processors
-  call MPI_AllReduce(locSumVars(1:3), globSumVars(1:3), 3, FLASH_DOUBLE, MPI_Sum, MPI_Comm_World, error)
+  call MPI_AllReduce(locSumVars(1:3), globSumVars(1:3), 3, flash_real_dtype, MPI_Sum, MPI_Comm_World, error)
 
   force(1:3) = globSumVars(1:3) ! driving force
 
@@ -421,7 +428,7 @@ subroutine Stir(blockCount, blockList, dt, pass)
         last_time = time
         ! sum up injected kinetic energy contributions from all blocks and processors
         ekin_added_red = 0.0
-        call MPI_Reduce(ekin_added, ekin_added_red, 1, MPI_DOUBLE_PRECISION, MPI_Sum, MASTER_PE, MPI_Comm_World, error)
+        call MPI_Reduce(ekin_added, ekin_added_red, 1, flash_real_dtype, MPI_Sum, MASTER_PE, MPI_Comm_World, error)
         ekin_added = ekin_added_red
         ! only MASTER_PE writes
         if (dr_globalMe == MASTER_PE) then
