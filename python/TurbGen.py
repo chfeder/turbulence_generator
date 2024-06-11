@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-# written by Christoph Federrath, 2022
+# written by Christoph Federrath, 2022-2024
 
 import sys
 import argparse
@@ -72,7 +72,9 @@ def analyse(args, parser):
     dsetnamebase = 'turb_field_'
     dat = []
     for ic in range(ncmp): # loop over components
-        dat.append(hdfio.read(args.inputfile, dsetnamebase+dirs[ic]))
+        # need to transpose because the coordinate order in the HDF5 file is [[[z],y],x],
+        # while cfp.get_spectrum takes the coordinates in the order [x,[y,[z]]]
+        dat.append(hdfio.read(args.inputfile, dsetnamebase+dirs[ic]).T)
     dat = np.array(dat)
     # statistics
     mean = np.array([dat[d].mean() for d in range(ncmp)])
