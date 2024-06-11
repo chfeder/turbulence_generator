@@ -1,7 +1,7 @@
-/***********************************************
- *** Generate turbulent field with TurbGen.h ***
- *** Written by Christoph Federrath, 2022.   ***
-************************************************/
+/**************************************************
+ *** Generate turbulent field with TurbGen.h    ***
+ *** Written by Christoph Federrath, 2022-2024. ***
+***************************************************/
 
 #include <string>
 #include <iostream>
