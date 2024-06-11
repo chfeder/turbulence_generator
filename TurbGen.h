@@ -18,7 +18,7 @@
 //  Federrath et al. (2010, A&A 512, A81); Federrath (2013, MNRAS 436, 1245);
 //  Federrath et al. (2021, Nature Astronomy 5, 365)
 //
-// AUTHOR: Christoph Federrath, 2008-2023
+// AUTHOR: Christoph Federrath, 2008-2024
 //
 // *******************************************************************************
 
