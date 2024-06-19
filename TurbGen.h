@@ -696,7 +696,7 @@ class TurbGen
 
         if (verbose > 1) TurbGen_printf(FuncSig(__func__)+"entering.\n");
 
-        int ikmin[3], ikmax[3], ik[3], tot_nmodes;
+        int ikmin[3], ikmax[3], ik[3], tot_nmodes_full_sampling;
         double k[3], ka, kc, amplitude, parab_prefact;
 
         // applies in case of power law (spect_form == 2)
@@ -723,30 +723,25 @@ class TurbGen
 
         // determine the number of required modes (in case of full sampling)
         nmodes = 0;
-        for (ik[X] = ikmin[X]; ik[X] <= ikmax[X]; ik[X]++) {
+        for (ik[X] = -ikmax[X]; ik[X] <= ikmax[X]; ik[X]++) {
             k[X] = 2*M_PI * ik[X] / L[X];
-            for (ik[Y] = ikmin[Y]; ik[Y] <= ikmax[Y]; ik[Y]++) {
+            for (ik[Y] = -ikmax[Y]; ik[Y] <= ikmax[Y]; ik[Y]++) {
                 k[Y] = 2*M_PI * ik[Y] / L[Y];
-                for (ik[Z] = ikmin[Z]; ik[Z] <= ikmax[Z]; ik[Z]++) {
+                for (ik[Z] = -ikmax[Z]; ik[Z] <= ikmax[Z]; ik[Z]++) {
                     k[Z] = 2*M_PI * ik[Z] / L[Z];
                     ka = sqrt( k[X]*k[X] + k[Y]*k[Y] + k[Z]*k[Z] );
-                    if ((ka >= kmin) && (ka <= kmax)) {
-                        nmodes++;
-                        if ((int)ndim > 1) nmodes += 1;
-                        if ((int)ndim > 2) nmodes += 2;
-                    }
+                    if ((ka >= kmin) && (ka <= kmax)) nmodes++;
                 }
             }
         }
-        tot_nmodes = nmodes;
+        tot_nmodes_full_sampling = nmodes;
         if (spect_form != 2) { // for Band (spect_form=0) and Parabola (spect_form=1)
-            if (tot_nmodes > NameSpaceTurbGen::tgd_max_nmodes) {
+            if (tot_nmodes_full_sampling > NameSpaceTurbGen::tgd_max_nmodes) {
                 TurbGen_printf(" nmodes = %i, maxmodes = %i", nmodes, NameSpaceTurbGen::tgd_max_nmodes);
                 TurbGen_printf("Too many stirring modes"); exit(-1);
             }
-            if (verbose) TurbGen_printf("Generating %i turbulent modes...\n", tot_nmodes);
+            if (verbose) TurbGen_printf("Generating %i turbulent modes...\n", tot_nmodes_full_sampling);
         }
-
         nmodes = 0; // reset
 
         // ===================================================================
@@ -754,11 +749,11 @@ class TurbGen
         if (spect_form != 2) {
 
             // loop over all kx, ky, kz to generate turbulent modes
-            for (ik[X] = ikmin[X]; ik[X] <= ikmax[X]; ik[X]++) {
+            for (ik[X] = -ikmax[X]; ik[X] <= ikmax[X]; ik[X]++) {
                 k[X] = 2*M_PI * ik[X] / L[X];
-                for (ik[Y] = ikmin[Y]; ik[Y] <= ikmax[Y]; ik[Y]++) {
+                for (ik[Y] = -ikmax[Y]; ik[Y] <= ikmax[Y]; ik[Y]++) {
                     k[Y] = 2*M_PI * ik[Y] / L[Y];
-                        for (ik[Z] = ikmin[Z]; ik[Z] <= ikmax[Z]; ik[Z]++) {
+                        for (ik[Z] = -ikmax[Z]; ik[Z] <= ikmax[Z]; ik[Z]++) {
                         k[Z] = 2*M_PI * ik[Z] / L[Z];
 
                         ka = sqrt( k[X]*k[X] + k[Y]*k[Y] + k[Z]*k[Z] );
@@ -770,40 +765,20 @@ class TurbGen
 
                             // note: power spectrum ~ amplitude^2 (1D), amplitude^2 * 2pi k (2D), amplitude^2 * 4pi k^2 (3D) 
                             amplitude = sqrt(amplitude) * pow(kc/ka,((int)ndim-1)/2.0);
-
-                            nmodes++;
                             ampl.push_back(amplitude);
+
                             mode[X].push_back(k[X]);
                             if ((int)ndim > 1) mode[Y].push_back(k[Y]);
                             if ((int)ndim > 2) mode[Z].push_back(k[Z]);
+                            nmodes++;
 
-                            if ((int)ndim > 1) {
-                                nmodes++;
-                                ampl.push_back(amplitude);
-                                mode[X].push_back( k[X]);
-                                mode[Y].push_back(-k[Y]);
-                                if ((int)ndim > 2) mode[Z].push_back( k[Z]);
-                            }
-
-                            if ((int)ndim > 2) {
-                                nmodes++;
-                                ampl.push_back(amplitude);
-                                mode[X].push_back( k[X]);
-                                mode[Y].push_back( k[Y]);
-                                mode[Z].push_back(-k[Z]);
-                                nmodes++;
-                                ampl.push_back(amplitude);
-                                mode[X].push_back( k[X]);
-                                mode[Y].push_back(-k[Y]);
-                                mode[Z].push_back(-k[Z]);
-                            }
-
-                            if ((nmodes) % 1000 == 0) if (verbose) TurbGen_printf(" ... %i of total %i modes generated...\n", nmodes, tot_nmodes);
+                            if ((nmodes) % 1000 == 0) if (verbose) TurbGen_printf(" ... %i of total %i modes generated...\n", nmodes, tot_nmodes_full_sampling);
 
                         } // in k range
                     } // ikz
                 } // iky
             } // ikx
+
         } // spect_form != 2
 
         // ===============================================================================
@@ -811,7 +786,7 @@ class TurbGen
         // === with the number of angles growing ~ k^angles_exp
         if (spect_form == 2) {
 
-            if (verbose) TurbGen_printf("There would be %i turbulent modes, if k-space were fully sampled (angles_exp = 2.0)...\n", tot_nmodes);
+            if (verbose) TurbGen_printf("There would be %i turbulent modes, if k-space were fully sampled (angles_exp = 2.0)...\n", tot_nmodes_full_sampling);
             if (verbose) TurbGen_printf("Here we are using angles_exp = %f\n", angles_exp);
 
             // initialize additional random numbers (uniformly distributed) to randomise angles
