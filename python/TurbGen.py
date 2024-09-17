@@ -92,7 +92,7 @@ def analyse(args, parser):
         fit_result = cfp.fit(Gaussian_func, q, pdf)
         xfit = np.linspace(q.min(),q.max(),num=500)
         yfit = Gaussian_func(xfit, *fit_result.popt)
-        cfp.plot(x=xfit, y=yfit, label="$\mathrm{fit:}\:"+dirs[d]+"$")
+        cfp.plot(x=xfit, y=yfit, label=r"$\mathrm{fit:}\:"+dirs[d]+"$")
     # finally, plot everything
     cfp.plot(xlabel='$q$', ylabel='PDF', ylog=True, save=args.inputfile+"_pdf.pdf")
     # Fourier spectra power comparison
