@@ -21,7 +21,7 @@
 !!   blockList(:) : The list of blocks on which to apply the stirring operator
 !!
 !! AUTHOR
-!!   Christoph Federrath, 2008-2024
+!!   Christoph Federrath
 !!
 !!***
 
@@ -38,6 +38,7 @@ subroutine StirICs(blockCount, blockList)
                                Grid_getDeltas, Grid_getBlkPhysicalSize, Grid_getBlkCenterCoords
   use Grid_data, ONLY : gr_imin, gr_imax, gr_jmin, gr_jmax, gr_kmin, gr_kmax
   use PhysicalConstants_interface, ONLY : PhysicalConstants_get
+  use iso_c_binding, ONLY : c_double, c_float
 
   implicit none
 
@@ -51,16 +52,16 @@ subroutine StirICs(blockCount, blockList)
   integer, dimension(2,MDIM)   :: blkLimits, blkLimitsGC
   integer                      :: ib, ie, error, istat
   real, dimension(MDIM)        :: del, blockSize, blockCenter ! MDIM is always 3
-  real(kind=8)                 :: pos_beg(MDIM), pos_end(MDIM)
+  real(c_double)               :: pos_beg(MDIM), pos_end(MDIM)
   integer                      :: ncells(MDIM)
   real                         :: mu0, dvol, RmsVelNorm
   real                         :: mass, totvol, xMomentum, yMomentum, zMomentum, xVelSq, yVelSq, zVelSq
   real                         :: xBmean, yBmean, zBmean, RmsMagNorm
-  real(kind=8)                 :: L(3) ! domain length
+  real(c_double)               :: L(3) ! domain length
 
   real, dimension(:,:,:,:), POINTER :: solnData
 
-  real(kind=4), allocatable, dimension(:,:,:) :: vx, vy, vz
+  real(c_float), allocatable, dimension(:,:,:) :: vx, vy, vz
 
   real, dimension(NXB) :: ke_old, ke_new
   real, dimension(NXB) :: me_old, me_new
@@ -69,9 +70,9 @@ subroutine StirICs(blockCount, blockList)
 
 #ifdef HYBRID_PRECISION
   integer, parameter :: flash_real_dtype = FLASH_DOUBLE
-  real(kind=8)       :: globalSumQuantities(nGlobalSum) ! Global summed quantities
-  real(kind=8)       :: localSumQuantities(nGlobalSum)  ! Global summed quantities
-  real(kind=8)       :: ekin_added, ekin_added_red, emag_added, emag_added_red
+  real(c_double)     :: globalSumQuantities(nGlobalSum) ! Global summed quantities
+  real(c_double)     :: localSumQuantities(nGlobalSum)  ! Global summed quantities
+  real(c_double)     :: ekin_added, ekin_added_red, emag_added, emag_added_red
 #else
   integer, parameter :: flash_real_dtype = FLASH_REAL
   real               :: globalSumQuantities(nGlobalSum) ! Global summed quantities
@@ -84,7 +85,7 @@ subroutine StirICs(blockCount, blockList)
 
   ! return if nstep > 1 or if already called
   call Driver_getNStep(nstep)
-  if ((nstep .gt. 1) .or. called_already) return
+  if ((nstep > 1) .or. called_already) return
 
   called_already = .true.
 
@@ -100,9 +101,9 @@ subroutine StirICs(blockCount, blockList)
   !! =============================================
   !! Generate initial turbulent VELOCITY field
   !! =============================================
-  if (st_rmsVelocity .gt. 0.0) then
+  if (st_rmsVelocity > 0.0) then
 
-    if (dr_globalMe .eq. MASTER_PE) then
+    if (dr_globalMe == MASTER_PE) then
       write (*,'(A,ES10.3)') 'StirICs: === Generating initial turbulent velocity field; st_rmsVelocity = ', st_rmsVelocity
     endif
 
@@ -191,7 +192,7 @@ subroutine StirICs(blockCount, blockList)
       deallocate(vy)
       deallocate(vz)
 
-      if (mod(100*blockID,blockCount) .eq. 0) then
+      if (mod(100*blockID,blockCount) == 0) then
         write(*,'(A,I5,A,F6.1,A)') '[', dr_globalMe, '] StirInitialConditions: 1st loop (kinetic): done: ', &
                                     100.0*blockID/real(blockCount), '% of my blocks.'
       endif
@@ -305,7 +306,7 @@ subroutine StirICs(blockCount, blockList)
       deallocate(vy)
       deallocate(vz)
 
-      if (mod(100*blockID,blockCount) .eq. 0) then
+      if (mod(100*blockID,blockCount) == 0) then
         write(*,'(A,I5,A,F6.1,A)') '[', dr_globalMe, '] StirInitialConditions: 2nd loop (kinetic): done: ', &
                                     100.0*blockID/real(blockCount), '% of my blocks.'
       endif
@@ -326,9 +327,9 @@ subroutine StirICs(blockCount, blockList)
   !! =============================================
   !! Generate initial turbulent MAGNETIC field
   !! =============================================
-  if (st_rmsMagneticField .gt. 0.0) then
+  if (st_rmsMagneticField > 0.0) then
 
-    if (dr_globalMe .eq. MASTER_PE) then
+    if (dr_globalMe == MASTER_PE) then
       write (*,'(A,ES10.3)') &
         'StirICs: === Generating initial turbulent magnetic field; st_rmsMagneticField = ', st_rmsMagneticField
     endif
@@ -418,7 +419,7 @@ subroutine StirICs(blockCount, blockList)
       deallocate(vy)
       deallocate(vz)
 
-      if (mod(100*blockID,blockCount) .eq. 0) then
+      if (mod(100*blockID,blockCount) == 0) then
         write(*,'(A,I5,A,F6.1,A)') '[', dr_globalMe, '] StirInitialConditions: 1st loop (magnetic): done: ', &
                                     100.0*blockID/real(blockCount), '% of my blocks.'
       endif
@@ -517,7 +518,7 @@ subroutine StirICs(blockCount, blockList)
       deallocate(vy)
       deallocate(vz)
 
-      if (mod(100*blockID,blockCount) .eq. 0) then
+      if (mod(100*blockID,blockCount) == 0) then
         write(*,'(A,I5,A,F6.1,A)') '[', dr_globalMe, '] StirInitialConditions: 2nd loop (magnetic): done: ', &
                                     100.0*blockID/real(blockCount), '% of my blocks.'
       endif

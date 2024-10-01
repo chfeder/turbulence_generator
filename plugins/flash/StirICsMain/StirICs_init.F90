@@ -53,7 +53,7 @@
 !!        random number generator seed for magentic field
 !!
 !! AUTHOR
-!!  Christoph Federrath, 2014-2022
+!!  Christoph Federrath
 !!
 !!***
 
@@ -94,11 +94,11 @@ subroutine StirICs_init(restart)
 
   if (restart) return ! return on restart, so we don't get confused with the messages below
 
-  if ((dr_globalMe .eq. MASTER_PE) .and. (.not. st_useStirICs)) &
+  if ((dr_globalMe == MASTER_PE) .and. (.not. st_useStirICs)) &
       & write(*,'(A)') 'WARNING: You have included the StirInitialConditions unit but useStirICs = .false.'
 
   ! for initial turbulent velocity field
-  if ((dr_globalMe .eq. MASTER_PE) .and. st_useStirICs .and. (st_rmsVelocity .gt. 0.0)) then
+  if ((dr_globalMe == MASTER_PE) .and. st_useStirICs .and. (st_rmsVelocity > 0.0)) then
      write (*,'(A)') '--- Turbulent initial conditions for velocity field ---'
      write (*,'(A,ES10.3)') ' target RMS turbulent velocity = ', st_rmsVelocity
      write (*,'(A,ES10.3)') ' solenoidal weight    = ', st_solWeight
@@ -113,7 +113,7 @@ subroutine StirICs_init(restart)
   endif
 
   ! for initial turbulent magnetic field
-  if ((dr_globalMe .eq. MASTER_PE) .and. st_useStirICs .and. (st_rmsMagneticField .gt. 0.0)) then
+  if ((dr_globalMe == MASTER_PE) .and. st_useStirICs .and. (st_rmsMagneticField > 0.0)) then
      write (*,'(A)') '--- Turbulent initial conditions for magnetic field ---'
      write (*,'(A,ES10.3)') ' target RMS magnetic field = ', st_rmsMagneticField
      write (*,'(A,ES10.3)') ' minimum wavenumber   = ', st_stirMagneticKMin
