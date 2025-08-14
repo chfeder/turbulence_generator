@@ -9,11 +9,11 @@
 #include <string>
 #include <cstring>
 #include <cassert>
+#include <typeinfo>
 
-// we use H5_HAVE_PARALLEL defined in hdf5.h to signal whether we have MPI support or not
-#ifdef H5_HAVE_PARALLEL
-#include <mpi.h>
-#else
+// The detault is to use this class with MPI support (to switch off MPI, the user needs to #define NO_MPI).
+// Also note that this class makes use of H5_HAVE_PARALLEL defined in hdf5.h, if hdf5 has parallel support.
+#ifdef NO_MPI
 #ifndef MPI_Comm
 #define MPI_Comm int
 #endif
@@ -23,6 +23,8 @@
 #ifndef MPI_COMM_WORLD
 #define MPI_COMM_WORLD 0
 #endif
+#else
+#include <mpi.h>
 #endif
 
 namespace NameSpaceHDFIO {
@@ -49,7 +51,7 @@ namespace NameSpaceHDFIO {
  * dataset to be written or the datasetnames inside an HDF5 file.
  *
  * @author Christoph Federrath
- * @version 2007-2022
+ * @version 2007-2025
  */
 
 class HDFIO
@@ -714,17 +716,26 @@ class HDFIO
     };
 
     /**
-     * delete HDF5 dataset
+     * check if HDF5 dataset exists
      * @param Datasetname datasetname
      */
-    public: void delete_dataset(const std::string Datasetname)
+    public: bool dataset_exists(const std::string Datasetname)
     {
         std::vector<std::string> dsets_in_file = getDatasetnames();
         bool dset_in_file = false; // see if the Datasetname exists in the file
         for (unsigned int i = 0; i < dsets_in_file.size(); i++) {
             if (dsets_in_file[i] == Datasetname) { dset_in_file = true; break; }
         }
-        if (dset_in_file) { // if the Datasetname is in the file, delete it
+        return dset_in_file;
+    };
+
+    /**
+     * delete HDF5 dataset
+     * @param Datasetname datasetname
+     */
+    public: void delete_dataset(const std::string Datasetname)
+    {
+        if (this->dataset_exists(Datasetname)) { // if the Datasetname is in the file, delete it
             HDF5_status = H5Ldelete(File_id, Datasetname.c_str(), H5P_DEFAULT); // delete dataset
             assert( HDF5_status != HDF5_error );
         }
@@ -953,7 +964,7 @@ class HDFIO
         for (int i=0; i<nsets; i++)
         {
             ret[i] = this->getDatasetname(i);
-            if (Verbose > 1) std::cout << "dataset in file: " << ret[i] << std::endl;
+            if (Verbose > 2) std::cout << "dataset in file: " << ret[i] << std::endl;
         }
         return ret;
     };
