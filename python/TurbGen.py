@@ -7,6 +7,7 @@ import argparse
 import numpy as np
 import cfpack as cfp
 from cfpack import hdfio, print, stop
+cfp.import_matplotlibrc()
 
 # =========================================================
 def Gaussian_func(x, mean, sigma):
@@ -85,7 +86,7 @@ def analyse(args, parser):
     for d in range(ncmp):
         pdf_obj = cfp.get_pdf(dat[d], bins=min(100,int(0.1*dat[d].size)))
         pdf = pdf_obj.pdf
-        q = pdf_obj.bin_center
+        q = pdf_obj.bin_centres
         cfp.plot(x=q, y=pdf, label="$"+dirs[d]+"$")
         # fit and plot fit
         print("fit for "+dirs[d]+" component:")
