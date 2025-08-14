@@ -1,6 +1,6 @@
 /**********************************************************
  *** Basic example code for using Turbulence Generator. ***
- *** Written by Christoph Federrath, 2022.              ***
+ *** Written by Christoph Federrath, 2022-2025.         ***
 ***********************************************************/
 
 #include <cstdlib>

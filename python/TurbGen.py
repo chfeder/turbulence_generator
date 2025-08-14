@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-# written by Christoph Federrath, 2022-2024
+# written by Christoph Federrath, 2022-2025
 
 import sys
 import argparse
