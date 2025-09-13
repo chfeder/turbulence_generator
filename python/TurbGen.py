@@ -144,7 +144,7 @@ if __name__ == "__main__":
         help="number of spatial dimensions; (default: %(default)s)")
     parser_generate.add_argument('-N', nargs='+', type=int, default=[64, 64, 64],
         help='number of grid cells for generated turbulent field; (default: %(default)s)')
-    parser_generate.add_argument('-L', nargs='+', type=int, default=[1.0, 1.0, 1.0],
+    parser_generate.add_argument('-L', nargs='+', type=float, default=[1.0, 1.0, 1.0],
         help='physical size of box in which to generate turbulent field; (default: %(default)s)')
     parser_generate.add_argument('-kmin', type=float, default=2.0,
         help='minimum wavenumber of generated field in units of 2pi/L[X]; (default: %(default)s)')
