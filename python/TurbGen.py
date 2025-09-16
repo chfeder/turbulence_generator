@@ -7,7 +7,6 @@ import argparse
 import numpy as np
 import cfpack as cfp
 from cfpack import hdfio, print, stop
-cfp.import_matplotlibrc()
 
 # =========================================================
 def Gaussian_func(x, mean, sigma):
@@ -64,7 +63,8 @@ def generate(args, parser):
 # =========================================================
 
 # === analyse turbulent field in HDF5 file ===
-def analyse(args, parser):
+def analyse(args):
+    cfp.load_plot_style()
     # read file and analyse
     ndim = float(hdfio.read(args.inputfile, 'ndim'))
     ncmp = int(hdfio.read(args.inputfile, 'ncmp'))
@@ -127,6 +127,7 @@ def analyse(args, parser):
         y[ind] = y[ind][0] * (x[ind]/x[ind][0])**power_law_exp_2
         cfp.plot(x=x, y=y, label="power-law slopes: "+str(power_law_exp)+", "+str(power_law_exp_2), linestyle='dashed', color='black')
     cfp.plot(xlabel='$k$', ylabel='$P(k)$', xlim=[0.9,1.1*np.max(k)], xlog=True, ylog=True, legend_loc='lower left', save=args.inputfile+"_spectrum.pdf")
+    cfp.unload_plot_style()
 
 # =========================================================
 
@@ -192,4 +193,4 @@ if __name__ == "__main__":
         generate(args, parser_generate)
 
     if args.subcommand == 'analyse':
-        analyse(args, parser_analyse)
+        analyse(args)
