@@ -145,7 +145,7 @@ class TurbGenEx : public TurbGen
 		// over modes below
 		// Get axis to loop over.
 		amrex::Box xSpace(amrex::IntVect(AMREX_D_DECL(box.smallEnd()[0], 0, 0)), amrex::IntVect(AMREX_D_DECL(box.bigEnd()[0], 0, 0)));
-		amrex::Box ySpace(amrex::IntVect(AMREX_D_DECL(0, box.smallEnd()[1], 0)), amrex::IntVect(AMREX_D_DECL(0, box.bigEnd()[0], 0)));
+		amrex::Box ySpace(amrex::IntVect(AMREX_D_DECL(0, box.smallEnd()[1], 0)), amrex::IntVect(AMREX_D_DECL(0, box.bigEnd()[1], 0)));
 		amrex::Box zSpace(amrex::IntVect(AMREX_D_DECL(0, 0, box.smallEnd()[2])), amrex::IntVect(AMREX_D_DECL(0, 0, box.bigEnd()[2])));
 
 		// Along each axis there is a sin and cos component for each mode.
