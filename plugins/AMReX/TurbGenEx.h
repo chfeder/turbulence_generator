@@ -155,9 +155,9 @@ class TurbGenEx : public TurbGen
 		amrex::FArrayBox yPrecompFab(ySpace, comps);
 		amrex::FArrayBox zPrecompFab(zSpace, comps);
 
-		amrex::Array4 xPrecomp = xPrecompFab.array();
-		amrex::Array4 yPrecomp = yPrecompFab.array();
-		amrex::Array4 zPrecomp = zPrecompFab.array();
+		auto xPrecomp = xPrecompFab.array();
+		auto yPrecomp = yPrecompFab.array();
+		auto zPrecomp = zPrecompFab.array();
 
 		// Loops over the 2D space of x and modes. Fills Array4 which has no y,z
 		// size hence effectively a 2d array of x - modes The
