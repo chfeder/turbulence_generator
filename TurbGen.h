@@ -378,7 +378,7 @@ class TurbGen
     }
 
     // ******************************************************
-    public: bool check_for_update(const double time) {
+    public: virtual bool check_for_update(const double time) {
         // call overloaded check_for_update() without automatic amplitude adjustment (v_turb < 0)
         double v_turb[3]; for (int d = 0; d < 3; d++) v_turb[d] = -1.0;
         return check_for_update(time, v_turb);
