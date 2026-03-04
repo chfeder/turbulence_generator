@@ -377,6 +377,13 @@ class TurbGen
        return 0;
     }
 
+
+    public:
+      virtual bool is_update_available(const double time) {
+        int step_requested = floor(time / dt);
+        return (step_requested > step);
+    }
+
     // ******************************************************
     public: virtual bool check_for_update(const double time) {
         // call overloaded check_for_update() without automatic amplitude adjustment (v_turb < 0)
