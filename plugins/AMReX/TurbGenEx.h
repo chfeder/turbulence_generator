@@ -110,6 +110,10 @@ public:
     return 0;
   }
 
+  bool is_update_available(const double time) override {
+    return TurbGen::is_update_available(time);
+  }
+
   bool check_for_update(const double time) override {
     return TurbGen::check_for_update(time);
   }
