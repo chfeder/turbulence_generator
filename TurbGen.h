@@ -380,7 +380,7 @@ class TurbGen
 
     public:
       virtual bool is_update_available(const double time) {
-        int step_requested = floor(time / dt);
+        int step_requested = floor(time / dt); // requested OU step number based on input 'time'
         return (step_requested > step);
     }
 
@@ -400,9 +400,9 @@ class TurbGen
         // ******************************************************
         if (verbose > 1) TurbGen_printf(FuncSig(__func__)+"entering.\n");
         // check if we need to update the OU pattern
-        int step_requested = floor(time / dt); // requested OU step number based on input 'time'
-        if (verbose > 1) TurbGen_printf("step_requested = %i\n", step_requested);
-        if (step_requested <= step) {
+        bool updated = is_update_available(time);
+        if (verbose > 1) TurbGen_printf("step_requested = %i\n", floor(time / dt));
+        if (!updated) {
             if (verbose > 1) TurbGen_printf("no update of pattern...returning.\n");
             if (verbose > 1) TurbGen_printf(FuncSig(__func__)+"exiting.\n");
             return false; // no update (yet) -> return false, i.e., no change of driving pattern
