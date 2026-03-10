@@ -434,7 +434,7 @@ class TurbGen
             }
         } // if (auto_adjust_amplitude)
         // if we are here: update OU vector
-        for (int is = step; is < step_requested; is++) {
+        for (int is = step; is < floor(time/dt); is++) {
             OU_noise_update(); // this seeks to the requested OU state (updates OUphases)
             step++; // update internal OU step number
             if (verbose > 1) TurbGen_printf("step = %i, time = %f\n", step, step*dt);
