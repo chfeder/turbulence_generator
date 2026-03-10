@@ -379,7 +379,7 @@ class TurbGen
 
     // ******************************************************
     public: virtual bool is_update_available(const double time) {
-        int step_requested = floor(time / dt); // requested OU step number based on input 'time'
+        int step_requested = floor(time/dt); // requested OU step number based on input 'time'
         if (verbose > 1) TurbGen_printf("step_requested = %i\n", step_requested);
         return (step_requested > step);
     }; // is_update_available
@@ -400,9 +400,7 @@ class TurbGen
         // ******************************************************
         if (verbose > 1) TurbGen_printf(FuncSig(__func__)+"entering.\n");
         // check if we need to update the OU pattern
-        bool update_available = is_update_available(time);
-        if (verbose > 1) TurbGen_printf("step_requested = %i\n", floor(time / dt));
-        if (!update_available) {
+        if (!is_update_available(time)) {
             if (verbose > 1) TurbGen_printf("no update of pattern...returning.\n");
             if (verbose > 1) TurbGen_printf(FuncSig(__func__)+"exiting.\n");
             return false; // no update (yet) -> return false, i.e., no change of driving pattern
@@ -434,7 +432,7 @@ class TurbGen
             }
         } // if (auto_adjust_amplitude)
         // if we are here: update OU vector
-        for (int is = step; is < floor(time/dt); is++) {
+        for (int is = step; is < floor(time/dt); is++) { // step_requested = floor(time/dt)
             OU_noise_update(); // this seeks to the requested OU state (updates OUphases)
             step++; // update internal OU step number
             if (verbose > 1) TurbGen_printf("step = %i, time = %f\n", step, step*dt);
