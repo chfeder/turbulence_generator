@@ -614,6 +614,12 @@ class HDFIO
     public: void write( const void* const DataBuffer, const std::string Datasetname,
                         const std::vector<int> Dimensions, const hid_t DataType)
     {
+        this->write(DataBuffer, Datasetname, std::vector<long>(Dimensions.begin(), Dimensions.end()),
+                    DataType, MPI_COMM_NULL);
+    };
+    public: void write( const void* const DataBuffer, const std::string Datasetname,
+                        const std::vector<long> Dimensions, const hid_t DataType)
+    {
         this->write(DataBuffer, Datasetname, Dimensions, DataType, MPI_COMM_NULL);
     };
 
@@ -627,6 +633,12 @@ class HDFIO
      */
     public: void write( const void* const DataBuffer, const std::string Datasetname,
                         const std::vector<int> Dimensions, const hid_t DataType, MPI_Comm comm)
+    {
+        this->setDims(std::vector<long>(Dimensions.begin(), Dimensions.end())); // set dimensions
+        this->write(DataBuffer, Datasetname, DataType, comm); // call write
+    };
+    public: void write( const void* const DataBuffer, const std::string Datasetname,
+                        const std::vector<long> Dimensions, const hid_t DataType, MPI_Comm comm)
     {
         this->setDims(Dimensions); // set dimensions
         this->write(DataBuffer, Datasetname, DataType, comm); // call write
@@ -694,6 +706,11 @@ class HDFIO
      * @param comm: MPI communicator for parallel file I/O
      */
     public: void create_dataset(const std::string Datasetname, const std::vector<int> Dimensions,
+                                const hid_t DataType, MPI_Comm comm)
+    {
+        create_dataset(Datasetname, std::vector<long>(Dimensions.begin(), Dimensions.end()), DataType, comm);
+    };
+    public: void create_dataset(const std::string Datasetname, const std::vector<long> Dimensions,
                                 const hid_t DataType, MPI_Comm comm)
     {
         this->setDims(Dimensions); // set dimensions
@@ -765,22 +782,22 @@ class HDFIO
      * set array dimension in different directions
      * @param dim dimension of the array
      */
-    public: void setDimX(const int dim_x)
+    public: void setDimX(const long dim_x)
     {
         HDFDims[0] = static_cast<hsize_t>(dim_x);
     };
 
-    public: void setDimY(const int dim_y)
+    public: void setDimY(const long dim_y)
     {
         HDFDims[1] = static_cast<hsize_t>(dim_y);
     };
 
-    public: void setDimZ(const int dim_z)
+    public: void setDimZ(const long dim_z)
     {
         HDFDims[2] = static_cast<hsize_t>(dim_z);
     };
 
-    public: void setDims(const std::vector<int> Dimensions)
+    public: void setDims(const std::vector<long> Dimensions)
     {
         Rank = Dimensions.size();
         for(int i = 0; i < Rank; i++)
@@ -812,19 +829,19 @@ class HDFIO
      * get array dimension in different directions
      * @return dimension of the array
      */
-    public: int getDimX(void) const
+    public: long getDimX(void) const
     {
-        return static_cast<int>(HDFDims[0]);
+        return static_cast<long>(HDFDims[0]);
     };
 
-    public: int getDimY(void) const
+    public: long getDimY(void) const
     {
-        return static_cast<int>(HDFDims[1]);
+        return static_cast<long>(HDFDims[1]);
     };
 
-    public: int getDimZ(void) const
+    public: long getDimZ(void) const
     {
-        return static_cast<int>(HDFDims[2]);
+        return static_cast<long>(HDFDims[2]);
     };
 
     /**
@@ -832,7 +849,7 @@ class HDFIO
      * @param Datasetname datasetname
      * @return size of the dataset
      */
-    public: int getSize(const std::string Datasetname)
+    public: long getSize(const std::string Datasetname)
     {
         // open dataset
         Dataset_id = H5Dopen(File_id, Datasetname.c_str(), H5P_DEFAULT);
@@ -865,7 +882,7 @@ class HDFIO
         HDF5_status = H5Dclose(Dataset_id);
         assert( HDF5_status != HDF5_error );
 
-        return static_cast<int>(HDFSize);
+        return static_cast<long>(HDFSize);
     }; // getSize
 
     /**
@@ -873,7 +890,7 @@ class HDFIO
      * @param Datasetname datasetname for which dimensional info is read
      * @return dimension of the array
      */
-    public: std::vector<int> getDims(const std::string Datasetname)
+    public: std::vector<long> getDims(const std::string Datasetname)
     {
         // open dataset
         Dataset_id = H5Dopen(File_id, Datasetname.c_str(), H5P_DEFAULT);
@@ -901,9 +918,9 @@ class HDFIO
         HDF5_status = H5Dclose(Dataset_id);
         assert( HDF5_status != HDF5_error );
 
-        std::vector<int> ReturnDims(Rank);
+        std::vector<long> ReturnDims(Rank);
         for(int i = 0; i < Rank; i++)
-            ReturnDims[i] = static_cast<int>(HDFDims[i]);
+            ReturnDims[i] = static_cast<long>(HDFDims[i]);
 
         return ReturnDims;
     }; // getDims
