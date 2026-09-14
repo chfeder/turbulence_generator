@@ -162,9 +162,9 @@ public:
     // Along each axis there is a sin and cos component for each mode.
     int comps = nmodes * 2;
 
-    amrex::FArrayBox xPrecompFab(xSpace, comps);
-    amrex::FArrayBox yPrecompFab(ySpace, comps);
-    amrex::FArrayBox zPrecompFab(zSpace, comps);
+    amrex::FArrayBox xPrecompFab(xSpace, comps, amrex::The_Async_Arena());
+    amrex::FArrayBox yPrecompFab(ySpace, comps, amrex::The_Async_Arena());
+    amrex::FArrayBox zPrecompFab(zSpace, comps, amrex::The_Async_Arena());
 
     auto xPrecomp = xPrecompFab.array();
     auto yPrecomp = yPrecompFab.array();
